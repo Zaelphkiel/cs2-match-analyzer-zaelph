@@ -76,7 +76,10 @@ export default function MatchDetailsScreen() {
   };
 
   const renderPredictions = () => {
-    if (!analysis) return null;
+    if (!analysis || !analysis.overallPrediction) return null;
+
+    const probability = analysis.overallPrediction.probability ?? 0;
+    const confidence = analysis.overallPrediction.confidence ?? 0;
 
     return (
       <View style={styles.sectionContainer}>
@@ -85,25 +88,25 @@ export default function MatchDetailsScreen() {
             <Target size={24} color="#FFB84D" />
             <Text style={styles.predictionTitle}>Match Winner Prediction</Text>
           </View>
-          <Text style={styles.winnerName}>{analysis.overallPrediction.winner}</Text>
+          <Text style={styles.winnerName}>{analysis.overallPrediction.winner || 'N/A'}</Text>
           <View style={styles.probabilityContainer}>
             <Text style={styles.probabilityLabel}>Win Probability</Text>
             <Text style={styles.probabilityValue}>
-              {analysis.overallPrediction.probability.toFixed(1)}%
+              {probability.toFixed(1)}%
             </Text>
           </View>
           <View style={styles.probabilityBar}>
             <View
               style={[
                 styles.probabilityFill,
-                { width: `${analysis.overallPrediction.probability}%` },
+                { width: `${probability}%` },
               ]}
             />
           </View>
           <View style={styles.predictionMeta}>
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Total Maps</Text>
-              <Text style={styles.metaValue}>{analysis.overallPrediction.totalMaps}</Text>
+              <Text style={styles.metaValue}>{analysis.overallPrediction.totalMaps ?? 0}</Text>
             </View>
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Over 2 Maps</Text>
@@ -114,216 +117,168 @@ export default function MatchDetailsScreen() {
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Confidence</Text>
               <Text style={styles.metaValue}>
-                {analysis.overallPrediction.confidence.toFixed(1)}%
+                {confidence.toFixed(1)}%
               </Text>
             </View>
           </View>
         </View>
 
         <Text style={styles.sectionTitle}>Map-by-Map Predictions</Text>
-        {analysis.mapPredictions.map((mapPred, idx) => (
-          <View key={idx} style={styles.mapPredictionCard}>
-            <View style={styles.mapPredHeader}>
-              <Text style={styles.mapName}>{mapPred.mapName}</Text>
-              <View style={styles.mapWinnerBadge}>
-                <Text style={styles.mapWinnerText}>{mapPred.winner}</Text>
+        {(analysis.mapPredictions || []).map((mapPred, idx) => {
+          const mapProb = mapPred.probability ?? 0;
+          const overUnderConf = mapPred.overUnder?.confidence ?? 0;
+          
+          return (
+            <View key={idx} style={styles.mapPredictionCard}>
+              <View style={styles.mapPredHeader}>
+                <Text style={styles.mapName}>{mapPred.mapName || 'Unknown'}</Text>
+                <View style={styles.mapWinnerBadge}>
+                  <Text style={styles.mapWinnerText}>{mapPred.winner || 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={styles.mapPredBody}>
+                <View style={styles.mapStatRow}>
+                  <Text style={styles.mapStatLabel}>Win Probability</Text>
+                  <Text style={styles.mapStatValue}>{mapProb.toFixed(1)}%</Text>
+                </View>
+                <View style={styles.mapStatRow}>
+                  <Text style={styles.mapStatLabel}>Expected Rounds</Text>
+                  <Text style={styles.mapStatValue}>{mapPred.totalRounds ?? 0}</Text>
+                </View>
+                {mapPred.overUnder && (
+                  <View style={styles.mapStatRow}>
+                    <Text style={styles.mapStatLabel}>Over/Under {mapPred.overUnder.line ?? 0}</Text>
+                    <Text style={[
+                      styles.mapStatValue,
+                      mapPred.overUnder.prediction === 'over' ? styles.overText : styles.underText,
+                    ]}>
+                      {(mapPred.overUnder.prediction || 'N/A').toUpperCase()} ({overUnderConf.toFixed(1)}%)
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
-            <View style={styles.mapPredBody}>
-              <View style={styles.mapStatRow}>
-                <Text style={styles.mapStatLabel}>Win Probability</Text>
-                <Text style={styles.mapStatValue}>{mapPred.probability.toFixed(1)}%</Text>
-              </View>
-              <View style={styles.mapStatRow}>
-                <Text style={styles.mapStatLabel}>Expected Rounds</Text>
-                <Text style={styles.mapStatValue}>{mapPred.totalRounds}</Text>
-              </View>
-              <View style={styles.mapStatRow}>
-                <Text style={styles.mapStatLabel}>Over/Under {mapPred.overUnder.line}</Text>
-                <Text style={[
-                  styles.mapStatValue,
-                  mapPred.overUnder.prediction === 'over' ? styles.overText : styles.underText,
-                ]}>
-                  {mapPred.overUnder.prediction.toUpperCase()} ({mapPred.overUnder.confidence.toFixed(1)}%)
-                </Text>
-              </View>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     );
   };
 
   const renderAnalysis = () => {
-    if (!analysis) return null;
+    if (!analysis || !analysis.teamAnalysis) return null;
+
+    const renderTeamAnalysis = (team: typeof match.team1, teamData: typeof analysis.teamAnalysis.team1) => {
+      if (!teamData) return null;
+
+      return (
+        <View style={styles.teamAnalysisCard}>
+          <View style={styles.teamAnalysisHeader}>
+            <Image source={{ uri: team.logo }} style={styles.teamLogoLarge} />
+            <Text style={styles.teamAnalysisName}>{team.name}</Text>
+          </View>
+
+          {teamData.strengths && teamData.strengths.length > 0 && (
+            <View style={styles.analysisSection}>
+              <Text style={styles.analysisSectionTitle}>Strengths</Text>
+              {teamData.strengths.map((strength, idx) => (
+                <View key={idx} style={styles.bulletItem}>
+                  <View style={styles.bulletDot} />
+                  <Text style={styles.bulletText}>{strength}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {teamData.weaknesses && teamData.weaknesses.length > 0 && (
+            <View style={styles.analysisSection}>
+              <Text style={styles.analysisSectionTitle}>Weaknesses</Text>
+              {teamData.weaknesses.map((weakness, idx) => (
+                <View key={idx} style={styles.bulletItem}>
+                  <View style={[styles.bulletDot, styles.bulletDotRed]} />
+                  <Text style={styles.bulletText}>{weakness}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {teamData.keyPlayers && teamData.keyPlayers.length > 0 && (
+            <View style={styles.analysisSection}>
+              <Text style={styles.analysisSectionTitle}>Key Players</Text>
+              {teamData.keyPlayers.map((player, idx) => (
+                <View key={idx} style={styles.playerCard}>
+                  <Text style={styles.playerName}>{player.name || 'Unknown'}</Text>
+                  <View style={styles.playerStats}>
+                    <View style={styles.playerStat}>
+                      <Text style={styles.playerStatLabel}>Rating</Text>
+                      <Text style={styles.playerStatValue}>{(player.rating ?? 0).toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.playerStat}>
+                      <Text style={styles.playerStatLabel}>K/D</Text>
+                      <Text style={styles.playerStatValue}>{(player.kd ?? 0).toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.playerStat}>
+                      <Text style={styles.playerStatLabel}>Form</Text>
+                      <Text style={styles.playerStatValue}>{player.recentPerformance || 'N/A'}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {teamData.mapPool && teamData.mapPool.length > 0 && (
+            <View style={styles.analysisSection}>
+              <Text style={styles.analysisSectionTitle}>Map Pool</Text>
+              {teamData.mapPool.map((mapStat, idx) => (
+                <View key={idx} style={styles.mapStatCard}>
+                  <View style={styles.mapStatHeader}>
+                    <Text style={styles.mapStatName}>{mapStat.name || 'Unknown'}</Text>
+                    <Text style={styles.mapStatWinRate}>{(mapStat.winRate ?? 0).toFixed(1)}%</Text>
+                  </View>
+                  <View style={styles.mapStatDetails}>
+                    <View style={styles.mapStatDetail}>
+                      <Text style={styles.mapStatDetailLabel}>CT: {(mapStat.ctWinRate ?? 0).toFixed(1)}%</Text>
+                    </View>
+                    <View style={styles.mapStatDetail}>
+                      <Text style={styles.mapStatDetailLabel}>T: {(mapStat.tWinRate ?? 0).toFixed(1)}%</Text>
+                    </View>
+                    <View style={styles.mapStatDetail}>
+                      <Text style={styles.mapStatDetailLabel}>Best: {mapStat.bestSide || 'N/A'}</Text>
+                    </View>
+                    <View style={styles.mapStatDetail}>
+                      <Text style={styles.mapStatDetailLabel}>{mapStat.playedCount ?? 0} games</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      );
+    };
 
     return (
       <View style={styles.sectionContainer}>
-        <View style={styles.teamAnalysisCard}>
-          <View style={styles.teamAnalysisHeader}>
-            <Image source={{ uri: match.team1.logo }} style={styles.teamLogoLarge} />
-            <Text style={styles.teamAnalysisName}>{match.team1.name}</Text>
-          </View>
+        {renderTeamAnalysis(match.team1, analysis.teamAnalysis.team1)}
+        {renderTeamAnalysis(match.team2, analysis.teamAnalysis.team2)}
 
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Strengths</Text>
-            {analysis.teamAnalysis.team1.strengths.map((strength, idx) => (
-              <View key={idx} style={styles.bulletItem}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>{strength}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Weaknesses</Text>
-            {analysis.teamAnalysis.team1.weaknesses.map((weakness, idx) => (
-              <View key={idx} style={styles.bulletItem}>
-                <View style={[styles.bulletDot, styles.bulletDotRed]} />
-                <Text style={styles.bulletText}>{weakness}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Key Players</Text>
-            {analysis.teamAnalysis.team1.keyPlayers.map((player, idx) => (
-              <View key={idx} style={styles.playerCard}>
-                <Text style={styles.playerName}>{player.name}</Text>
-                <View style={styles.playerStats}>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>Rating</Text>
-                    <Text style={styles.playerStatValue}>{player.rating.toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>K/D</Text>
-                    <Text style={styles.playerStatValue}>{player.kd.toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>Form</Text>
-                    <Text style={styles.playerStatValue}>{player.recentPerformance}</Text>
-                  </View>
+        {analysis.h2h && analysis.h2h.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Head-to-Head History</Text>
+            {analysis.h2h.map((h2hMatch, idx) => (
+              <View key={idx} style={styles.h2hCard}>
+                <View style={styles.h2hHeader}>
+                  <Text style={styles.h2hDate}>{new Date(h2hMatch.date).toLocaleDateString()}</Text>
+                  <Text style={styles.h2hEvent}>{h2hMatch.event || 'Unknown Event'}</Text>
+                </View>
+                <View style={styles.h2hBody}>
+                  <Text style={styles.h2hWinner}>{h2hMatch.winner || 'N/A'}</Text>
+                  <Text style={styles.h2hScore}>{h2hMatch.score || 'N/A'}</Text>
                 </View>
               </View>
             ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Map Pool</Text>
-            {analysis.teamAnalysis.team1.mapPool.map((mapStat, idx) => (
-              <View key={idx} style={styles.mapStatCard}>
-                <View style={styles.mapStatHeader}>
-                  <Text style={styles.mapStatName}>{mapStat.name}</Text>
-                  <Text style={styles.mapStatWinRate}>{mapStat.winRate.toFixed(1)}%</Text>
-                </View>
-                <View style={styles.mapStatDetails}>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>CT: {mapStat.ctWinRate.toFixed(1)}%</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>T: {mapStat.tWinRate.toFixed(1)}%</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>Best: {mapStat.bestSide}</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>{mapStat.playedCount} games</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.teamAnalysisCard}>
-          <View style={styles.teamAnalysisHeader}>
-            <Image source={{ uri: match.team2.logo }} style={styles.teamLogoLarge} />
-            <Text style={styles.teamAnalysisName}>{match.team2.name}</Text>
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Strengths</Text>
-            {analysis.teamAnalysis.team2.strengths.map((strength, idx) => (
-              <View key={idx} style={styles.bulletItem}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>{strength}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Weaknesses</Text>
-            {analysis.teamAnalysis.team2.weaknesses.map((weakness, idx) => (
-              <View key={idx} style={styles.bulletItem}>
-                <View style={[styles.bulletDot, styles.bulletDotRed]} />
-                <Text style={styles.bulletText}>{weakness}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Key Players</Text>
-            {analysis.teamAnalysis.team2.keyPlayers.map((player, idx) => (
-              <View key={idx} style={styles.playerCard}>
-                <Text style={styles.playerName}>{player.name}</Text>
-                <View style={styles.playerStats}>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>Rating</Text>
-                    <Text style={styles.playerStatValue}>{player.rating.toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>K/D</Text>
-                    <Text style={styles.playerStatValue}>{player.kd.toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.playerStat}>
-                    <Text style={styles.playerStatLabel}>Form</Text>
-                    <Text style={styles.playerStatValue}>{player.recentPerformance}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisSectionTitle}>Map Pool</Text>
-            {analysis.teamAnalysis.team2.mapPool.map((mapStat, idx) => (
-              <View key={idx} style={styles.mapStatCard}>
-                <View style={styles.mapStatHeader}>
-                  <Text style={styles.mapStatName}>{mapStat.name}</Text>
-                  <Text style={styles.mapStatWinRate}>{mapStat.winRate.toFixed(1)}%</Text>
-                </View>
-                <View style={styles.mapStatDetails}>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>CT: {mapStat.ctWinRate.toFixed(1)}%</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>T: {mapStat.tWinRate.toFixed(1)}%</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>Best: {mapStat.bestSide}</Text>
-                  </View>
-                  <View style={styles.mapStatDetail}>
-                    <Text style={styles.mapStatDetailLabel}>{mapStat.playedCount} games</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Head-to-Head History</Text>
-        {analysis.h2h.map((h2hMatch, idx) => (
-          <View key={idx} style={styles.h2hCard}>
-            <View style={styles.h2hHeader}>
-              <Text style={styles.h2hDate}>{new Date(h2hMatch.date).toLocaleDateString()}</Text>
-              <Text style={styles.h2hEvent}>{h2hMatch.event}</Text>
-            </View>
-            <View style={styles.h2hBody}>
-              <Text style={styles.h2hWinner}>{h2hMatch.winner}</Text>
-              <Text style={styles.h2hScore}>{h2hMatch.score}</Text>
-            </View>
-          </View>
-        ))}
+          </>
+        )}
       </View>
     );
   };
