@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Activity, Clock, TrendingUp, Filter, AlertCircle } from 'lucide-react-native';
+import { Activity, Clock, TrendingUp, Filter, AlertCircle, Settings } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/constants/api';
 import { Match } from '@/types/match';
@@ -205,9 +205,18 @@ export default function HomeScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>CS2 Analytics</Text>
-          <TouchableOpacity style={styles.filterButton}>
-            <Filter size={20} color="#FFB84D" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.filterButton}
+              onPress={() => router.push('/debug')}
+              activeOpacity={0.7}
+            >
+              <Settings size={20} color="#FFB84D" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterButton}>
+              <Filter size={20} color="#FFB84D" />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={styles.headerSubtitle}>
           AI-Powered Match Analysis & Predictions
@@ -345,6 +354,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 4,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
   },
   filterButton: {
     width: 40,
