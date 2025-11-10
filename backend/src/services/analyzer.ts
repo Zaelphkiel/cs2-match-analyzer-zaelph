@@ -2,6 +2,7 @@ import { Match, MatchAnalysis, MapPrediction, MapStats, Player } from '../types'
 import { HLTVScraper } from '../scraper/hltv';
 import { LiquidpediaScraper } from '../scraper/liquidpedia';
 import { PandaScoreScraper } from '../scraper/pandascore';
+import axios from 'axios';
 
 export class MatchAnalyzer {
   private hltvScraper: HLTVScraper;
@@ -15,7 +16,7 @@ export class MatchAnalyzer {
   }
 
   async analyzeMatch(match: Match): Promise<MatchAnalysis> {
-    console.log(`[Analyzer] Starting analysis for match: ${match.team1.name} vs ${match.team2.name}`);
+    console.log(`[Analyzer] Starting AI analysis for match: ${match.team1.name} vs ${match.team2.name}`);
 
     const [
       team1Stats,
@@ -69,22 +70,36 @@ export class MatchAnalyzer {
       new Date(b.date).getTime() - new Date(a.date).getTime()
     ).slice(0, 10);
     
-    const mergedTeam1Players = [...team1Players, ...psTeam1Players].slice(0, 5);
-    const mergedTeam2Players = [...team2Players, ...psTeam2Players].slice(0, 5);
+    const mergedTeam1Players = this.deduplicatePlayers([...team1Players, ...psTeam1Players]);
+    const mergedTeam2Players = this.deduplicatePlayers([...team2Players, ...psTeam2Players]);
     const mergedNews = [...hltvNews, ...psNews].sort((a, b) => 
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     ).slice(0, 15);
 
-    const mapPredictions = this.generateMapPredictions(
-      match.maps || ['TBD', 'TBD', 'TBD'],
+    console.log(`[Analyzer] Team 1 players: ${mergedTeam1Players.map(p => p.name).join(', ')}`);
+    console.log(`[Analyzer] Team 2 players: ${mergedTeam2Players.map(p => p.name).join(', ')}`);
+
+    const mapsToAnalyze = match.maps && match.maps.length > 0 && match.maps[0] !== 'TBD' 
+      ? match.maps 
+      : ['Dust2', 'Mirage', 'Inferno'];
+
+    const mapPredictions = await this.generateMapPredictionsWithAI(
+      match,
+      mapsToAnalyze,
       mergedTeam1MapStats,
-      mergedTeam2MapStats
+      mergedTeam2MapStats,
+      mergedTeam1Players,
+      mergedTeam2Players,
+      mergedH2H
     );
 
-    const overallPrediction = this.generateOverallPrediction(
+    const overallPrediction = await this.generateOverallPredictionWithAI(
       match,
       mergedTeam1MapStats,
       mergedTeam2MapStats,
+      mergedTeam1Players,
+      mergedTeam2Players,
+      mergedH2H,
       mapPredictions
     );
 
@@ -262,5 +277,163 @@ export class MatchAnalyzer {
     });
 
     return Array.from(mapStatsMap.values()).sort((a, b) => b.playedCount - a.playedCount);
+  }
+
+  private deduplicatePlayers(players: Player[]): Player[] {
+    const playerMap = new Map<string, Player>();
+    players.forEach(player => {
+      const normalizedName = player.name.toLowerCase().trim();
+      if (!playerMap.has(normalizedName)) {
+        playerMap.set(normalizedName, player);
+      } else {
+        const existing = playerMap.get(normalizedName)!;
+        existing.rating = (existing.rating + player.rating) / 2;
+        existing.kd = (existing.kd + player.kd) / 2;
+      }
+    });
+    return Array.from(playerMap.values()).slice(0, 5);
+  }
+
+  private async generateMapPredictionsWithAI(
+    match: Match,
+    maps: string[],
+    team1Stats: MapStats[],
+    team2Stats: MapStats[],
+    team1Players: Player[],
+    team2Players: Player[],
+    h2h: any[]
+  ): Promise<MapPrediction[]> {
+    console.log('[Analyzer] Generating AI map predictions...');
+
+    try {
+      const prompt = `Analyze this CS2 match map predictions:
+
+Team 1: ${match.team1.name}
+- Recent form: ${match.team1.recentForm.join(', ')}
+- Key players: ${team1Players.map(p => `${p.name} (rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
+- Map stats: ${team1Stats.map(m => `${m.name}: ${m.winRate.toFixed(1)}% WR (${m.playedCount} games)`).join(', ')}
+
+Team 2: ${match.team2.name}
+- Recent form: ${match.team2.recentForm.join(', ')}
+- Key players: ${team2Players.map(p => `${p.name} (rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
+- Map stats: ${team2Stats.map(m => `${m.name}: ${m.winRate.toFixed(1)}% WR (${m.playedCount} games)`).join(', ')}
+
+H2H record: ${h2h.slice(0, 5).map(h => `${h.winner} won ${h.score}`).join(', ')}
+
+Maps to analyze: ${maps.join(', ')}
+
+For EACH map, provide:
+1. Winner prediction (Team 1 or Team 2)
+2. Win probability (0-100%)
+3. Expected total rounds (usually 16-30)
+4. Over/Under 26.5 rounds prediction
+
+Provide analysis in JSON format with array of predictions for each map.`;
+
+      const response = await axios.post(
+        'https://toolkit.rork.com/ai/text',
+        {
+          prompt,
+          systemPrompt: 'You are a professional CS2 esports analyst. Provide detailed, realistic predictions based on statistics. Return only valid JSON.',
+        },
+        { timeout: 15000 }
+      );
+
+      const aiAnalysis = response.data.text;
+      const jsonMatch = aiAnalysis.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      
+      if (jsonMatch) {
+        const predictions = JSON.parse(jsonMatch[0]);
+        return maps.map((mapName, idx) => {
+          const aiPred = predictions[idx] || {};
+          return {
+            mapName,
+            winner: aiPred.winner || 'Team 1',
+            probability: aiPred.probability || 50,
+            totalRounds: aiPred.totalRounds || 26,
+            overUnder: {
+              line: 26.5,
+              prediction: (aiPred.totalRounds || 26) > 26.5 ? 'over' as const : 'under' as const,
+              confidence: aiPred.overUnderConfidence || 65,
+            },
+          };
+        });
+      }
+    } catch (error) {
+      console.error('[Analyzer] AI prediction failed, using fallback:', error);
+    }
+
+    return this.generateMapPredictions(maps, team1Stats, team2Stats);
+  }
+
+  private async generateOverallPredictionWithAI(
+    match: Match,
+    team1Stats: MapStats[],
+    team2Stats: MapStats[],
+    team1Players: Player[],
+    team2Players: Player[],
+    h2h: any[],
+    mapPredictions: MapPrediction[]
+  ): Promise<any> {
+    console.log('[Analyzer] Generating AI overall prediction...');
+
+    try {
+      const prompt = `Provide final match prediction for CS2 match:
+
+${match.team1.name} vs ${match.team2.name}
+
+Team 1 (${match.team1.name}):
+- Recent form: ${match.team1.recentForm.join('')} (${match.team1.recentForm.filter(f => f === 'W').length}W-${match.team1.recentForm.filter(f => f === 'L').length}L)
+- Best maps: ${team1Stats.slice(0, 3).map(m => `${m.name} (${m.winRate.toFixed(0)}%)`).join(', ')}
+- Star players: ${team1Players.slice(0, 3).map(p => `${p.name} (${p.rating.toFixed(2)} rating)`).join(', ')}
+
+Team 2 (${match.team2.name}):
+- Recent form: ${match.team2.recentForm.join('')} (${match.team2.recentForm.filter(f => f === 'W').length}W-${match.team2.recentForm.filter(f => f === 'L').length}L)
+- Best maps: ${team2Stats.slice(0, 3).map(m => `${m.name} (${m.winRate.toFixed(0)}%)`).join(', ')}
+- Star players: ${team2Players.slice(0, 3).map(p => `${p.name} (${p.rating.toFixed(2)} rating)`).join(', ')}
+
+Map predictions: ${mapPredictions.map(p => `${p.mapName}: ${p.winner} (${p.probability.toFixed(0)}%)`).join(', ')}
+
+H2H recent: ${h2h.slice(0, 3).map(h => `${h.winner} ${h.score}`).join(', ')}
+
+Provide:
+1. Match winner (exact team name)
+2. Win probability (realistic 45-75%)
+3. Final score prediction (e.g., 2-1, 2-0)
+4. Confidence level (50-95%)
+
+Return JSON with: { "winner": "Team Name", "probability": 65, "score": "2-1", "confidence": 70 }`;
+
+      const response = await axios.post(
+        'https://toolkit.rork.com/ai/text',
+        {
+          prompt,
+          systemPrompt: 'You are a professional CS2 betting analyst. Be realistic and conservative with predictions. Return only valid JSON.',
+        },
+        { timeout: 15000 }
+      );
+
+      const aiAnalysis = response.data.text;
+      const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        const prediction = JSON.parse(jsonMatch[0]);
+        const scoreParts = (prediction.score || '2-1').split('-');
+        const winnerMaps = Math.max(parseInt(scoreParts[0]) || 2, parseInt(scoreParts[1]) || 1);
+        const loserMaps = Math.min(parseInt(scoreParts[0]) || 2, parseInt(scoreParts[1]) || 1);
+        
+        return {
+          winner: prediction.winner || match.team1.name,
+          probability: Math.min(Math.max(prediction.probability || 55, 45), 75),
+          totalMaps: winnerMaps + loserMaps,
+          over2Maps: (winnerMaps + loserMaps) > 2,
+          confidence: Math.min(Math.max(prediction.confidence || 65, 50), 90),
+        };
+      }
+    } catch (error) {
+      console.error('[Analyzer] AI overall prediction failed, using fallback:', error);
+    }
+
+    return this.generateOverallPrediction(match, team1Stats, team2Stats, mapPredictions);
   }
 }

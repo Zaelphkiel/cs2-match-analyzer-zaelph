@@ -180,18 +180,34 @@ export class PandaScoreScraper {
       });
 
       if (teams.length === 0) {
+        console.log(`[PandaScore] No team found for ${teamName}`);
         return [];
       }
 
       const team = teams[0];
+      console.log(`[PandaScore] Found team ${team.name} with ${team.players.length} players`);
       
-      const players: Player[] = team.players.map(player => ({
-        name: player.name,
-        rating: 1.0 + (Math.random() * 0.3 - 0.15),
-        kd: 1.0 + (Math.random() * 0.5 - 0.25),
-        recentPerformance: Math.floor(Math.random() * 30) + 70,
-      }));
+      if (!team.players || team.players.length === 0) {
+        console.log(`[PandaScore] No players found for team ${teamName}`);
+        return [];
+      }
 
+      const players: Player[] = team.players.map(player => {
+        const rating = 1.0 + (Math.random() * 0.3 - 0.15);
+        const kd = 1.0 + (Math.random() * 0.5 - 0.25);
+        const performance = Math.floor(Math.random() * 30) + 70;
+        
+        console.log(`[PandaScore] Player: ${player.name} - Rating: ${rating.toFixed(2)}, K/D: ${kd.toFixed(2)}`);
+        
+        return {
+          name: player.name,
+          rating,
+          kd,
+          recentPerformance: performance,
+        };
+      });
+
+      console.log(`[PandaScore] Returning ${players.length} players for ${teamName}`);
       return players;
     } catch (error) {
       console.error(`[PandaScore] Error fetching player stats for ${teamName}:`, error);
