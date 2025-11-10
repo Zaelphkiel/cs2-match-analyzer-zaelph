@@ -78,12 +78,19 @@ export class MatchAnalyzer {
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     ).slice(0, 15);
 
-    console.log(`[Analyzer] Team 1 players: ${mergedTeam1Players.map(p => p.name).join(', ')}`);
-    console.log(`[Analyzer] Team 2 players: ${mergedTeam2Players.map(p => p.name).join(', ')}`);
+    console.log(`[Analyzer] Team 1 (${match.team1.name}) players: ${mergedTeam1Players.map(p => p.name).join(', ')}`);
+    console.log(`[Analyzer] Team 2 (${match.team2.name}) players: ${mergedTeam2Players.map(p => p.name).join(', ')}`);
 
     const mapsToAnalyze = match.maps && match.maps.length > 0 && match.maps[0] !== 'TBD' 
-      ? match.maps 
+      ? match.maps.filter(m => m !== 'TBD' && m !== '')
       : ['Dust2', 'Mirage', 'Inferno'];
+
+    console.log(`[Analyzer] Maps to analyze: ${mapsToAnalyze.join(', ')}`);
+
+    if (mapsToAnalyze.length === 0) {
+      console.warn('[Analyzer] No maps to analyze, using defaults');
+      mapsToAnalyze.push('Dust2', 'Mirage', 'Inferno');
+    }
 
     const mapPredictions = await this.generateMapPredictionsWithAI(
       match,
@@ -306,10 +313,14 @@ export class MatchAnalyzer {
     h2h: any[]
   ): Promise<MapPrediction[]> {
     console.log('[Analyzer] Generating AI map predictions...');
+    console.log(`[Analyzer] Maps to analyze: ${maps.join(', ')}`);
+    console.log(`[Analyzer] Team 1 has ${team1Players.length} players, Team 2 has ${team2Players.length} players`);
 
     const predictions: MapPrediction[] = [];
 
     for (const mapName of maps.filter(map => map !== 'TBD')) {
+      console.log(`[Analyzer] Analyzing map: ${mapName}`);
+      
       const aiPrediction = await this.aiService.analyzeMapPrediction(
         match,
         mapName,
@@ -320,6 +331,7 @@ export class MatchAnalyzer {
       );
 
       if (aiPrediction) {
+        console.log(`[Analyzer] AI prediction for ${mapName}: ${aiPrediction.winner} with ${aiPrediction.probability}%`);
         const overUnderLine = 26.5;
         predictions.push({
           mapName: mapName,
@@ -333,6 +345,7 @@ export class MatchAnalyzer {
           },
         });
       } else {
+        console.log(`[Analyzer] AI not available, using fallback for ${mapName}`);
         const team1Map = team1Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
         const team2Map = team2Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
 
@@ -360,6 +373,8 @@ export class MatchAnalyzer {
         const expectedRounds = baseRounds + variance;
         const overUnderLine = 26.5;
 
+        console.log(`[Analyzer] Fallback prediction for ${mapName}: ${winner} with ${probability.toFixed(1)}%`);
+
         predictions.push({
           mapName: mapName,
           winner: winner,
@@ -374,6 +389,7 @@ export class MatchAnalyzer {
       }
     }
 
+    console.log(`[Analyzer] Generated ${predictions.length} map predictions`);
     return predictions;
   }
 

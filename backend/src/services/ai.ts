@@ -39,27 +39,37 @@ export class AIService {
       const team1Map = team1Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
       const team2Map = team2Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
 
+      const team1PlayersStr = team1Players.length > 0 
+        ? team1Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')
+        : 'No player data available';
+      
+      const team2PlayersStr = team2Players.length > 0
+        ? team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')
+        : 'No player data available';
+
       const prompt = `You are a CS2 esports analyst. Analyze the following match on ${mapName}:
 
 TEAM 1: ${match.team1.name}
-Ranking: #${match.team1.ranking}
-Recent Form: ${match.team1.recentForm.join(', ')}
-Map Stats (${mapName}): ${team1Map ? `Win Rate: ${team1Map.winRate}%, Played: ${team1Map.playedCount}, CT: ${team1Map.ctWinRate}%, T: ${team1Map.tWinRate}%` : 'No data'}
-Top Players: ${team1Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
+Ranking: #${match.team1.ranking || 'Unknown'}
+Recent Form: ${match.team1.recentForm.length > 0 ? match.team1.recentForm.join(', ') : 'No recent data'}
+Map Stats (${mapName}): ${team1Map ? `Win Rate: ${team1Map.winRate.toFixed(1)}%, Played: ${team1Map.playedCount}, CT: ${team1Map.ctWinRate.toFixed(1)}%, T: ${team1Map.tWinRate.toFixed(1)}%` : 'No data'}
+Top Players: ${team1PlayersStr}
 
 TEAM 2: ${match.team2.name}
-Ranking: #${match.team2.ranking}
-Recent Form: ${match.team2.recentForm.join(', ')}
-Map Stats (${mapName}): ${team2Map ? `Win Rate: ${team2Map.winRate}%, Played: ${team2Map.playedCount}, CT: ${team2Map.ctWinRate}%, T: ${team2Map.tWinRate}%` : 'No data'}
-Top Players: ${team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
+Ranking: #${match.team2.ranking || 'Unknown'}
+Recent Form: ${match.team2.recentForm.length > 0 ? match.team2.recentForm.join(', ') : 'No recent data'}
+Map Stats (${mapName}): ${team2Map ? `Win Rate: ${team2Map.winRate.toFixed(1)}%, Played: ${team2Map.playedCount}, CT: ${team2Map.ctWinRate.toFixed(1)}%, T: ${team2Map.tWinRate.toFixed(1)}%` : 'No data'}
+Top Players: ${team2PlayersStr}
 
-Provide your analysis in this exact JSON format (ONLY JSON, no other text):
+Based on this data, provide your prediction. Respond with ONLY valid JSON in this exact format:
 {
-  "winner": "Team 1 Name or Team 2 Name",
+  "winner": "${match.team1.name}",
   "probability": 65.5,
   "expectedRounds": 26,
-  "reasoning": "Brief explanation of your prediction"
-}`;
+  "reasoning": "Brief explanation"
+}
+
+The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The probability should be between 50-85.`;
 
       console.log(`[AI] Analyzing map ${mapName} for ${match.team1.name} vs ${match.team2.name}...`);
 
@@ -68,15 +78,16 @@ Provide your analysis in this exact JSON format (ONLY JSON, no other text):
         messages: [
           {
             role: 'system',
-            content: 'You are a professional CS2 esports analyst. Always respond with valid JSON only.',
+            content: 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: 0.6,
+        max_tokens: 400,
+        response_format: { type: 'json_object' },
       });
 
       const content = response.choices[0]?.message?.content?.trim();
@@ -85,9 +96,16 @@ Provide your analysis in this exact JSON format (ONLY JSON, no other text):
         return null;
       }
 
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      let cleanedContent = content.trim();
+      if (cleanedContent.startsWith('```json')) {
+        cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+      } else if (cleanedContent.startsWith('```')) {
+        cleanedContent = cleanedContent.replace(/```\s*/g, '').replace(/```\s*$/g, '');
+      }
+      
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.log('[AI] No JSON found in response');
+        console.log('[AI] No JSON found in response:', content);
         return null;
       }
 
@@ -107,7 +125,7 @@ Provide your analysis in this exact JSON format (ONLY JSON, no other text):
     team2Stats: MapStats[],
     team1Players: Player[],
     team2Players: Player[],
-    mapPredictions: Array<{ mapName: string; winner: string; probability: number }>
+    mapPredictions: { mapName: string; winner: string; probability: number }[]
   ): Promise<{
     winner: string;
     probability: number;
@@ -121,6 +139,14 @@ Provide your analysis in this exact JSON format (ONLY JSON, no other text):
     }
 
     try {
+      const team1PlayersStr = team1Players.length > 0
+        ? team1Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)})`).join(', ')
+        : 'No player data';
+      
+      const team2PlayersStr = team2Players.length > 0
+        ? team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)})`).join(', ')
+        : 'No player data';
+
       const prompt = `You are a CS2 esports analyst. Analyze the overall match outcome:
 
 MATCH: ${match.team1.name} vs ${match.team2.name}
@@ -128,28 +154,30 @@ Event: ${match.event}
 Format: ${match.format}
 
 TEAM 1: ${match.team1.name}
-Ranking: #${match.team1.ranking}
-Recent Form: ${match.team1.recentForm.join(', ')}
+Ranking: #${match.team1.ranking || 'Unknown'}
+Recent Form: ${match.team1.recentForm.length > 0 ? match.team1.recentForm.join(', ') : 'No data'}
 Overall Stats: ${team1Stats.length} maps tracked
-Top Players: ${team1Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)})`).join(', ')}
+Top Players: ${team1PlayersStr}
 
 TEAM 2: ${match.team2.name}
-Ranking: #${match.team2.ranking}
-Recent Form: ${match.team2.recentForm.join(', ')}
+Ranking: #${match.team2.ranking || 'Unknown'}
+Recent Form: ${match.team2.recentForm.length > 0 ? match.team2.recentForm.join(', ') : 'No data'}
 Overall Stats: ${team2Stats.length} maps tracked
-Top Players: ${team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)})`).join(', ')}
+Top Players: ${team2PlayersStr}
 
 MAP PREDICTIONS:
 ${mapPredictions.map(p => `${p.mapName}: ${p.winner} (${p.probability.toFixed(1)}%)`).join('\n')}
 
-Based on all data, provide your overall match prediction in this exact JSON format (ONLY JSON):
+Based on all data, provide your overall match prediction. Respond with ONLY valid JSON:
 {
-  "winner": "Team 1 Name or Team 2 Name",
+  "winner": "${match.team1.name}",
   "probability": 68.5,
   "totalMaps": 3,
   "confidence": 75.0,
-  "reasoning": "Brief explanation considering all factors"
-}`;
+  "reasoning": "Brief explanation"
+}
+
+The winner must be exactly "${match.team1.name}" or "${match.team2.name}". Probability should be 50-85.`;
 
       console.log(`[AI] Analyzing overall match ${match.team1.name} vs ${match.team2.name}...`);
 
@@ -158,15 +186,16 @@ Based on all data, provide your overall match prediction in this exact JSON form
         messages: [
           {
             role: 'system',
-            content: 'You are a professional CS2 esports analyst. Always respond with valid JSON only.',
+            content: 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 600,
+        temperature: 0.6,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
       });
 
       const content = response.choices[0]?.message?.content?.trim();
@@ -175,9 +204,16 @@ Based on all data, provide your overall match prediction in this exact JSON form
         return null;
       }
 
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      let cleanedContent = content.trim();
+      if (cleanedContent.startsWith('```json')) {
+        cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+      } else if (cleanedContent.startsWith('```')) {
+        cleanedContent = cleanedContent.replace(/```\s*/g, '').replace(/```\s*$/g, '');
+      }
+
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.log('[AI] No JSON found in response');
+        console.log('[AI] No JSON found in response:', content);
         return null;
       }
 
