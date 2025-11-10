@@ -14,20 +14,34 @@ export class ScraperApiClient {
     try {
       console.log(`[ScraperAPI] Scraping: ${url}`);
       
-      const response = await axios.get(url, {
-        params: {
-          api_key: this.apiKey,
-          url: url,
-          render: renderJs ? 'true' : 'false',
-          country_code: 'us',
-        },
+      if (!this.apiKey) {
+        console.error('[ScraperAPI] API key is missing!');
+        throw new Error('ScraperAPI key not configured');
+      }
+      
+      const scraperUrl = `${this.baseUrl}?api_key=${this.apiKey}&url=${encodeURIComponent(url)}&render=${renderJs ? 'true' : 'false'}&country_code=us`;
+      
+      console.log(`[ScraperAPI] Request URL: ${scraperUrl.replace(this.apiKey, 'HIDDEN')}`);
+      
+      const response = await axios.get(scraperUrl, {
         timeout: 60000,
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+        },
       });
 
-      console.log(`[ScraperAPI] Success: ${url}`);
+      console.log(`[ScraperAPI] Success: ${url} (${response.data.length} bytes)`);
       return response.data;
     } catch (error) {
-      console.error(`[ScraperAPI] Error scraping ${url}:`, error);
+      if (axios.isAxiosError(error)) {
+        console.error(`[ScraperAPI] Error scraping ${url}:`, {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+        });
+      } else {
+        console.error(`[ScraperAPI] Error scraping ${url}:`, error);
+      }
       throw new Error(`ScraperAPI scraping failed: ${error}`);
     }
   }
