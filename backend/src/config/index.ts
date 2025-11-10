@@ -7,7 +7,8 @@ export const config = {
   browserlessApiKey: process.env.BROWSERLESS_API_KEY || '',
   scraperApiKey: process.env.SCRAPER_API_KEY || '',
   pandascoreApiKey: process.env.PANDASCORE_API_KEY || '',
-  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.proxyapi.ru/deepseek/v1',
   nodeEnv: process.env.NODE_ENV || 'development',
   browserlessUrl: 'https://chrome.browserless.io',
   scraperApiUrl: 'https://api.scraperapi.com',
@@ -26,8 +27,8 @@ if (!config.pandascoreApiKey) {
   console.warn('WARNING: PANDASCORE_API_KEY not set');
 }
 
-if (!config.openaiApiKey) {
-  console.warn('WARNING: OPENAI_API_KEY not set - AI analysis will use fallback data');
+if (!config.deepseekApiKey) {
+  console.warn('WARNING: DEEPSEEK_API_KEY not set - AI analysis will use fallback data');
 }
 
 console.log('Config loaded:', {
@@ -36,5 +37,5 @@ console.log('Config loaded:', {
   browserlessConfigured: !!config.browserlessApiKey,
   scraperApiConfigured: !!config.scraperApiKey,
   pandascoreConfigured: !!config.pandascoreApiKey,
-  openaiConfigured: !!config.openaiApiKey,
+  deepseekConfigured: !!config.deepseekApiKey,
 });

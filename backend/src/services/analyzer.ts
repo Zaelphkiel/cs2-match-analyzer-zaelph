@@ -2,17 +2,19 @@ import { Match, MatchAnalysis, MapPrediction, MapStats, Player } from '../types'
 import { HLTVScraper } from '../scraper/hltv';
 import { LiquidpediaScraper } from '../scraper/liquidpedia';
 import { PandaScoreScraper } from '../scraper/pandascore';
-import axios from 'axios';
+import { AIService } from './ai';
 
 export class MatchAnalyzer {
   private hltvScraper: HLTVScraper;
   private liquidpediaScraper: LiquidpediaScraper;
   private pandascoreScraper: PandaScoreScraper;
+  private aiService: AIService;
 
   constructor() {
     this.hltvScraper = new HLTVScraper();
     this.liquidpediaScraper = new LiquidpediaScraper();
     this.pandascoreScraper = new PandaScoreScraper();
+    this.aiService = new AIService();
   }
 
   async analyzeMatch(match: Match): Promise<MatchAnalysis> {
@@ -305,9 +307,32 @@ export class MatchAnalyzer {
   ): Promise<MapPrediction[]> {
     console.log('[Analyzer] Generating AI map predictions...');
 
-    return maps
-      .filter(map => map !== 'TBD')
-      .map(mapName => {
+    const predictions: MapPrediction[] = [];
+
+    for (const mapName of maps.filter(map => map !== 'TBD')) {
+      const aiPrediction = await this.aiService.analyzeMapPrediction(
+        match,
+        mapName,
+        team1Stats,
+        team2Stats,
+        team1Players,
+        team2Players
+      );
+
+      if (aiPrediction) {
+        const overUnderLine = 26.5;
+        predictions.push({
+          mapName: mapName,
+          winner: aiPrediction.winner,
+          probability: aiPrediction.probability,
+          totalRounds: aiPrediction.expectedRounds,
+          overUnder: {
+            line: overUnderLine,
+            prediction: aiPrediction.expectedRounds > overUnderLine ? 'over' as const : 'under' as const,
+            confidence: 50 + Math.abs(aiPrediction.expectedRounds - overUnderLine) * 8,
+          },
+        });
+      } else {
         const team1Map = team1Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
         const team2Map = team2Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
 
@@ -335,7 +360,7 @@ export class MatchAnalyzer {
         const expectedRounds = baseRounds + variance;
         const overUnderLine = 26.5;
 
-        return {
+        predictions.push({
           mapName: mapName,
           winner: winner,
           probability: probability,
@@ -345,8 +370,11 @@ export class MatchAnalyzer {
             prediction: expectedRounds > overUnderLine ? 'over' as const : 'under' as const,
             confidence: 50 + Math.abs(expectedRounds - overUnderLine) * 8,
           },
-        };
-      });
+        });
+      }
+    }
+
+    return predictions;
   }
 
   private async generateOverallPredictionWithAI(
@@ -367,6 +395,31 @@ export class MatchAnalyzer {
         totalMaps: 3,
         over2Maps: true,
         confidence: 50,
+      };
+    }
+
+    const mapPredictionsSimple = mapPredictions.map(p => ({
+      mapName: p.mapName,
+      winner: p.winner,
+      probability: p.probability,
+    }));
+
+    const aiPrediction = await this.aiService.analyzeOverallMatch(
+      match,
+      team1Stats,
+      team2Stats,
+      team1Players,
+      team2Players,
+      mapPredictionsSimple
+    );
+
+    if (aiPrediction) {
+      return {
+        winner: aiPrediction.winner,
+        probability: aiPrediction.probability,
+        totalMaps: aiPrediction.totalMaps,
+        over2Maps: aiPrediction.totalMaps > 2,
+        confidence: aiPrediction.confidence,
       };
     }
 

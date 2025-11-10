@@ -28,12 +28,18 @@ interface PandaScoreMatch {
     team_id: number;
   }>;
   games: Array<{
+    id: number;
+    status: string;
     map: {
       name: string;
     };
     winner: {
       id: number;
     };
+    scores?: Array<{
+      team_id: number;
+      score: number;
+    }>;
   }>;
   winner_id?: number;
 }
@@ -437,6 +443,20 @@ export class PandaScoreScraper {
             pickedBy: idx % 2 === 0 ? team1?.name || 'Team 1' : team2?.name || 'Team 2',
             number: idx + 1,
           }));
+
+          const currentGame = psMatch.games.find(g => g.status === 'running');
+          if (currentGame && currentGame.scores && currentGame.scores.length === 2) {
+            const team1Score = currentGame.scores.find(s => s.team_id === team1?.id)?.score || 0;
+            const team2Score = currentGame.scores.find(s => s.team_id === team2?.id)?.score || 0;
+
+            match.currentMap = {
+              name: currentGame.map?.name || 'Unknown',
+              score: {
+                team1: team1Score,
+                team2: team2Score,
+              },
+            };
+          }
         }
       }
     }
