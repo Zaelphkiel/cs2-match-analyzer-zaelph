@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://your-backend-url.onrender.com';
+const API_BASE_URL = 'https://cs2-backend-zaelph.onrender.com';
 
 export const api = {
   async getMatches() {
