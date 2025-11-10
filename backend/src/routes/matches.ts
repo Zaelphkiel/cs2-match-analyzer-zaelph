@@ -93,7 +93,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    let match: Match | undefined;
+    let match: Match | null | undefined;
 
     if (id.startsWith('ps_')) {
       console.log('[API] Fetching from PandaScore...');
@@ -156,7 +156,7 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
       });
     }
 
-    let match: Match | undefined;
+    let match: Match | null | undefined;
 
     if (id.startsWith('ps_')) {
       console.log('[API] Fetching match from PandaScore...');

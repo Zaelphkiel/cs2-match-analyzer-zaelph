@@ -11,9 +11,9 @@ export class AIService {
         apiKey: config.deepseekApiKey,
         baseURL: config.deepseekBaseUrl,
       });
-      console.log('[AI] DeepSeek client initialized');
+      console.log('[AI] OpenAI client initialized via ProxyAPI');
     } else {
-      console.warn('[AI] DeepSeek API key not configured');
+      console.warn('[AI] API key not configured');
     }
   }
 
@@ -31,7 +31,7 @@ export class AIService {
     reasoning: string;
   } | null> {
     if (!this.client) {
-      console.log('[AI] DeepSeek not configured, using fallback');
+      console.log('[AI] AI not configured, using fallback');
       return null;
     }
 
@@ -74,7 +74,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
       console.log(`[AI] Analyzing map ${mapName} for ${match.team1.name} vs ${match.team2.name}...`);
 
       const response = await this.client.chat.completions.create({
-        model: 'deepseek-chat',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -92,7 +92,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
 
       const content = response.choices[0]?.message?.content?.trim();
       if (!content) {
-        console.log('[AI] Empty response from DeepSeek');
+        console.log('[AI] Empty response from AI');
         return null;
       }
 
@@ -134,7 +134,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
     reasoning: string;
   } | null> {
     if (!this.client) {
-      console.log('[AI] DeepSeek not configured, using fallback');
+      console.log('[AI] AI not configured, using fallback');
       return null;
     }
 
@@ -182,7 +182,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". Proba
       console.log(`[AI] Analyzing overall match ${match.team1.name} vs ${match.team2.name}...`);
 
       const response = await this.client.chat.completions.create({
-        model: 'deepseek-chat',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -200,7 +200,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". Proba
 
       const content = response.choices[0]?.message?.content?.trim();
       if (!content) {
-        console.log('[AI] Empty response from DeepSeek');
+        console.log('[AI] Empty response from AI');
         return null;
       }
 

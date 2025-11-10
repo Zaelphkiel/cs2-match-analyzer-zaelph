@@ -397,6 +397,14 @@ export class PandaScoreScraper {
     const status = psMatch.status === 'running' ? 'live' : 
                    psMatch.status === 'finished' ? 'finished' : 'upcoming';
 
+    let formatStr = 'BO3';
+    if (psMatch.games && psMatch.games.length > 0) {
+      const totalGames = psMatch.games.length;
+      if (totalGames === 1) formatStr = 'BO1';
+      else if (totalGames === 3) formatStr = 'BO3';
+      else if (totalGames === 5) formatStr = 'BO5';
+    }
+
     const match: Match = {
       id: `ps_${psMatch.id}`,
       team1: {
@@ -418,8 +426,8 @@ export class PandaScoreScraper {
       status,
       startTime: psMatch.scheduled_at,
       event: psMatch.league?.name || psMatch.serie?.full_name || 'Unknown Event',
-      format: 'BO3',
-      maps: ['Dust2', 'Mirage', 'Inferno'],
+      format: formatStr,
+      maps: [],
     };
 
     if (psMatch.results && psMatch.results.length === 2) {
