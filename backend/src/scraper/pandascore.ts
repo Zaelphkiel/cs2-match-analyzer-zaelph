@@ -112,7 +112,7 @@ export class PandaScoreScraper {
     }
   }
 
-  async getMatchById(matchId: string): Promise<Match | null> {
+  async getMatchById(matchId: string): Promise<Match | undefined> {
     try {
       console.log(`[PandaScore] Fetching match ${matchId}...`);
       
@@ -121,7 +121,7 @@ export class PandaScoreScraper {
       return this.convertMatch(psMatch);
     } catch (error) {
       console.error(`[PandaScore] Error fetching match ${matchId}:`, error);
-      return null;
+      return undefined;
     }
   }
 
