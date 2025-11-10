@@ -52,6 +52,12 @@ export default function MatchDetailsScreen() {
     }
   }, [analyzeMutation.isPending, progressAnim]);
 
+  useEffect(() => {
+    if (!isLoadingMatch && !match) {
+      router.replace('/+not-found');
+    }
+  }, [isLoadingMatch, match, router]);
+
   if (isLoadingMatch) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
@@ -62,7 +68,6 @@ export default function MatchDetailsScreen() {
   }
 
   if (!match) {
-    router.replace('/+not-found');
     return null;
   }
 
