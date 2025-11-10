@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { HLTVScraper } from '../scraper/hltv';
+import { PandaScoreScraper } from '../scraper/pandascore';
 import { MatchAnalyzer } from '../services/analyzer';
 import { cacheService } from '../services/cache';
 import { Match } from '../types';
 
 const router = Router();
 const hltvScraper = new HLTVScraper();
+const pandascoreScraper = new PandaScoreScraper();
 const analyzer = new MatchAnalyzer();
 
 router.get('/', async (req: Request, res: Response) => {
@@ -23,7 +25,26 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    const matches = await hltvScraper.getMatches();
+    const [hltvMatches, pandascoreMatches] = await Promise.all([
+      hltvScraper.getMatches(),
+      pandascoreScraper.getMatches(),
+    ]);
+
+    const matchMap = new Map<string, Match>();
+    
+    hltvMatches.forEach(match => {
+      const key = `${match.team1.name}_${match.team2.name}`;
+      matchMap.set(key, match);
+    });
+
+    pandascoreMatches.forEach(match => {
+      const key = `${match.team1.name}_${match.team2.name}`;
+      if (!matchMap.has(key)) {
+        matchMap.set(key, match);
+      }
+    });
+
+    const matches = Array.from(matchMap.values());
     
     cacheService.set('all_matches', matches, 2);
 
@@ -127,6 +148,52 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to analyze match',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+router.get('/sources/pandascore', async (req: Request, res: Response) => {
+  try {
+    console.log('[API] GET /matches/sources/pandascore - Testing PandaScore API');
+
+    const matches = await pandascoreScraper.getMatches();
+    
+    res.json({
+      success: true,
+      source: 'PandaScore',
+      matchesFound: matches.length,
+      data: matches.slice(0, 5),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[API] Error testing PandaScore:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch from PandaScore',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+router.get('/sources/hltv', async (req: Request, res: Response) => {
+  try {
+    console.log('[API] GET /matches/sources/hltv - Testing HLTV scraper');
+
+    const matches = await hltvScraper.getMatches();
+    
+    res.json({
+      success: true,
+      source: 'HLTV',
+      matchesFound: matches.length,
+      data: matches.slice(0, 5),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[API] Error testing HLTV:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch from HLTV',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

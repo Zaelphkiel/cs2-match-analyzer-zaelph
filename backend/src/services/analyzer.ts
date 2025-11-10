@@ -1,14 +1,17 @@
 import { Match, MatchAnalysis, MapPrediction, MapStats, Player } from '../types';
 import { HLTVScraper } from '../scraper/hltv';
 import { LiquidpediaScraper } from '../scraper/liquidpedia';
+import { PandaScoreScraper } from '../scraper/pandascore';
 
 export class MatchAnalyzer {
   private hltvScraper: HLTVScraper;
   private liquidpediaScraper: LiquidpediaScraper;
+  private pandascoreScraper: PandaScoreScraper;
 
   constructor() {
     this.hltvScraper = new HLTVScraper();
     this.liquidpediaScraper = new LiquidpediaScraper();
+    this.pandascoreScraper = new PandaScoreScraper();
   }
 
   async analyzeMatch(match: Match): Promise<MatchAnalysis> {
@@ -23,6 +26,11 @@ export class MatchAnalyzer {
       team2Players,
       h2h,
       news,
+      psTeam1Stats,
+      psTeam2Stats,
+      psH2H,
+      psTeam1MapStats,
+      psTeam2MapStats,
     ] = await Promise.all([
       this.hltvScraper.getTeamStats(match.team1.name),
       this.hltvScraper.getTeamStats(match.team2.name),
@@ -32,47 +40,58 @@ export class MatchAnalyzer {
       this.liquidpediaScraper.getPlayerStats(match.team2.name),
       this.liquidpediaScraper.getH2HHistory(match.team1.name, match.team2.name),
       this.hltvScraper.getNews([match.team1.name, match.team2.name]),
+      this.pandascoreScraper.getTeamStats(match.team1.name),
+      this.pandascoreScraper.getTeamStats(match.team2.name),
+      this.pandascoreScraper.getH2HHistory(match.team1.name, match.team2.name),
+      this.pandascoreScraper.getTeamMapStats(match.team1.name),
+      this.pandascoreScraper.getTeamMapStats(match.team2.name),
     ]);
 
-    if (team1Stats) {
-      match.team1.ranking = team1Stats.ranking;
-      match.team1.recentForm = team1Stats.recentForm.slice(0, 5);
+    if (team1Stats || psTeam1Stats) {
+      match.team1.ranking = team1Stats?.ranking || psTeam1Stats?.ranking || 0;
+      match.team1.recentForm = (team1Stats?.recentForm || psTeam1Stats?.recentForm || []).slice(0, 5);
     }
 
-    if (team2Stats) {
-      match.team2.ranking = team2Stats.ranking;
-      match.team2.recentForm = team2Stats.recentForm.slice(0, 5);
+    if (team2Stats || psTeam2Stats) {
+      match.team2.ranking = team2Stats?.ranking || psTeam2Stats?.ranking || 0;
+      match.team2.recentForm = (team2Stats?.recentForm || psTeam2Stats?.recentForm || []).slice(0, 5);
     }
+
+    const mergedTeam1MapStats = this.mergeMapStats(team1MapStats, psTeam1MapStats);
+    const mergedTeam2MapStats = this.mergeMapStats(team2MapStats, psTeam2MapStats);
+    const mergedH2H = [...h2h, ...psH2H].sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    ).slice(0, 10);
 
     const mapPredictions = this.generateMapPredictions(
       match.maps || ['TBD', 'TBD', 'TBD'],
-      team1MapStats,
-      team2MapStats
+      mergedTeam1MapStats,
+      mergedTeam2MapStats
     );
 
     const overallPrediction = this.generateOverallPrediction(
       match,
-      team1MapStats,
-      team2MapStats,
+      mergedTeam1MapStats,
+      mergedTeam2MapStats,
       mapPredictions
     );
 
     const analysis: MatchAnalysis = {
       teamAnalysis: {
         team1: {
-          strengths: this.generateStrengths(team1MapStats, team1Players),
-          weaknesses: this.generateWeaknesses(team1MapStats, team1Players),
-          mapPool: team1MapStats,
+          strengths: this.generateStrengths(mergedTeam1MapStats, team1Players),
+          weaknesses: this.generateWeaknesses(mergedTeam1MapStats, team1Players),
+          mapPool: mergedTeam1MapStats,
           keyPlayers: team1Players,
         },
         team2: {
-          strengths: this.generateStrengths(team2MapStats, team2Players),
-          weaknesses: this.generateWeaknesses(team2MapStats, team2Players),
-          mapPool: team2MapStats,
+          strengths: this.generateStrengths(mergedTeam2MapStats, team2Players),
+          weaknesses: this.generateWeaknesses(mergedTeam2MapStats, team2Players),
+          mapPool: mergedTeam2MapStats,
           keyPlayers: team2Players,
         },
       },
-      h2h: h2h,
+      h2h: mergedH2H,
       mapPredictions: mapPredictions,
       overallPrediction: overallPrediction,
       news: news,
@@ -204,5 +223,32 @@ export class MatchAnalyzer {
     }
 
     return weaknesses;
+  }
+
+  private mergeMapStats(stats1: MapStats[], stats2: MapStats[]): MapStats[] {
+    const mapStatsMap = new Map<string, MapStats>();
+
+    [...stats1, ...stats2].forEach(stat => {
+      if (!mapStatsMap.has(stat.name)) {
+        mapStatsMap.set(stat.name, stat);
+      } else {
+        const existing = mapStatsMap.get(stat.name)!;
+        const totalPlayed = existing.playedCount + stat.playedCount;
+        const avgWinRate = (existing.winRate * existing.playedCount + stat.winRate * stat.playedCount) / totalPlayed;
+        const avgCTWinRate = (existing.ctWinRate * existing.playedCount + stat.ctWinRate * stat.playedCount) / totalPlayed;
+        const avgTWinRate = (existing.tWinRate * existing.playedCount + stat.tWinRate * stat.playedCount) / totalPlayed;
+
+        mapStatsMap.set(stat.name, {
+          name: stat.name,
+          playedCount: totalPlayed,
+          winRate: avgWinRate,
+          ctWinRate: avgCTWinRate,
+          tWinRate: avgTWinRate,
+          bestSide: avgCTWinRate > avgTWinRate ? 'CT' : 'T',
+        });
+      }
+    });
+
+    return Array.from(mapStatsMap.values()).sort((a, b) => b.playedCount - a.playedCount);
   }
 }
