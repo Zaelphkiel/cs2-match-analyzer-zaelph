@@ -80,6 +80,12 @@ export interface MatchAnalysis {
   lastUpdated: string;
 }
 
+export interface MapPick {
+  map: string;
+  pickedBy: string;
+  number: number;
+}
+
 export interface Match {
   id: string;
   team1: Team;
@@ -100,6 +106,7 @@ export interface Match {
     };
   };
   maps?: string[];
+  mapsPicks?: MapPick[];
   stream?: string;
   hltvUrl?: string;
   liquidpediaUrl?: string;

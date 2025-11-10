@@ -305,65 +305,48 @@ export class MatchAnalyzer {
   ): Promise<MapPrediction[]> {
     console.log('[Analyzer] Generating AI map predictions...');
 
-    try {
-      const prompt = `Analyze this CS2 match map predictions:
+    return maps
+      .filter(map => map !== 'TBD')
+      .map(mapName => {
+        const team1Map = team1Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
+        const team2Map = team2Stats.find(m => m.name.toLowerCase() === mapName.toLowerCase());
 
-Team 1: ${match.team1.name}
-- Recent form: ${match.team1.recentForm.join(', ')}
-- Key players: ${team1Players.map(p => `${p.name} (rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
-- Map stats: ${team1Stats.map(m => `${m.name}: ${m.winRate.toFixed(1)}% WR (${m.playedCount} games)`).join(', ')}
+        const team1WinRate = team1Map?.winRate || 50;
+        const team2WinRate = team2Map?.winRate || 50;
 
-Team 2: ${match.team2.name}
-- Recent form: ${match.team2.recentForm.join(', ')}
-- Key players: ${team2Players.map(p => `${p.name} (rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')}
-- Map stats: ${team2Stats.map(m => `${m.name}: ${m.winRate.toFixed(1)}% WR (${m.playedCount} games)`).join(', ')}
+        const team1FormBonus = match.team1.recentForm.filter(f => f === 'W').length * 2;
+        const team2FormBonus = match.team2.recentForm.filter(f => f === 'W').length * 2;
 
-H2H record: ${h2h.slice(0, 5).map(h => `${h.winner} won ${h.score}`).join(', ')}
+        const team1Score = team1WinRate + team1FormBonus;
+        const team2Score = team2WinRate + team2FormBonus;
 
-Maps to analyze: ${maps.join(', ')}
+        const totalScore = team1Score + team2Score;
+        let team1Probability = (team1Score / totalScore) * 100;
+        let team2Probability = 100 - team1Probability;
 
-For EACH map, provide:
-1. Winner prediction (Team 1 or Team 2)
-2. Win probability (0-100%)
-3. Expected total rounds (usually 16-30)
-4. Over/Under 26.5 rounds prediction
+        team1Probability = Math.max(40, Math.min(75, team1Probability));
+        team2Probability = 100 - team1Probability;
 
-Provide analysis in JSON format with array of predictions for each map.`;
+        const winner = team1Probability > team2Probability ? match.team1.name : match.team2.name;
+        const probability = Math.max(team1Probability, team2Probability);
 
-      const response = await axios.post(
-        'https://toolkit.rork.com/ai/text',
-        {
-          prompt,
-          systemPrompt: 'You are a professional CS2 esports analyst. Provide detailed, realistic predictions based on statistics. Return only valid JSON.',
-        },
-        { timeout: 15000 }
-      );
+        const baseRounds = 26;
+        const variance = Math.floor(Math.random() * 5) - 2;
+        const expectedRounds = baseRounds + variance;
+        const overUnderLine = 26.5;
 
-      const aiAnalysis = response.data.text;
-      const jsonMatch = aiAnalysis.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      
-      if (jsonMatch) {
-        const predictions = JSON.parse(jsonMatch[0]);
-        return maps.map((mapName, idx) => {
-          const aiPred = predictions[idx] || {};
-          return {
-            mapName,
-            winner: aiPred.winner || 'Team 1',
-            probability: aiPred.probability || 50,
-            totalRounds: aiPred.totalRounds || 26,
-            overUnder: {
-              line: 26.5,
-              prediction: (aiPred.totalRounds || 26) > 26.5 ? 'over' as const : 'under' as const,
-              confidence: aiPred.overUnderConfidence || 65,
-            },
-          };
-        });
-      }
-    } catch (error) {
-      console.error('[Analyzer] AI prediction failed, using fallback:', error);
-    }
-
-    return this.generateMapPredictions(maps, team1Stats, team2Stats);
+        return {
+          mapName: mapName,
+          winner: winner,
+          probability: probability,
+          totalRounds: expectedRounds,
+          overUnder: {
+            line: overUnderLine,
+            prediction: expectedRounds > overUnderLine ? 'over' as const : 'under' as const,
+            confidence: 50 + Math.abs(expectedRounds - overUnderLine) * 8,
+          },
+        };
+      });
   }
 
   private async generateOverallPredictionWithAI(
@@ -375,65 +358,47 @@ Provide analysis in JSON format with array of predictions for each map.`;
     h2h: any[],
     mapPredictions: MapPrediction[]
   ): Promise<any> {
-    console.log('[Analyzer] Generating AI overall prediction...');
+    console.log('[Analyzer] Generating overall prediction...');
 
-    try {
-      const prompt = `Provide final match prediction for CS2 match:
-
-${match.team1.name} vs ${match.team2.name}
-
-Team 1 (${match.team1.name}):
-- Recent form: ${match.team1.recentForm.join('')} (${match.team1.recentForm.filter(f => f === 'W').length}W-${match.team1.recentForm.filter(f => f === 'L').length}L)
-- Best maps: ${team1Stats.slice(0, 3).map(m => `${m.name} (${m.winRate.toFixed(0)}%)`).join(', ')}
-- Star players: ${team1Players.slice(0, 3).map(p => `${p.name} (${p.rating.toFixed(2)} rating)`).join(', ')}
-
-Team 2 (${match.team2.name}):
-- Recent form: ${match.team2.recentForm.join('')} (${match.team2.recentForm.filter(f => f === 'W').length}W-${match.team2.recentForm.filter(f => f === 'L').length}L)
-- Best maps: ${team2Stats.slice(0, 3).map(m => `${m.name} (${m.winRate.toFixed(0)}%)`).join(', ')}
-- Star players: ${team2Players.slice(0, 3).map(p => `${p.name} (${p.rating.toFixed(2)} rating)`).join(', ')}
-
-Map predictions: ${mapPredictions.map(p => `${p.mapName}: ${p.winner} (${p.probability.toFixed(0)}%)`).join(', ')}
-
-H2H recent: ${h2h.slice(0, 3).map(h => `${h.winner} ${h.score}`).join(', ')}
-
-Provide:
-1. Match winner (exact team name)
-2. Win probability (realistic 45-75%)
-3. Final score prediction (e.g., 2-1, 2-0)
-4. Confidence level (50-95%)
-
-Return JSON with: { "winner": "Team Name", "probability": 65, "score": "2-1", "confidence": 70 }`;
-
-      const response = await axios.post(
-        'https://toolkit.rork.com/ai/text',
-        {
-          prompt,
-          systemPrompt: 'You are a professional CS2 betting analyst. Be realistic and conservative with predictions. Return only valid JSON.',
-        },
-        { timeout: 15000 }
-      );
-
-      const aiAnalysis = response.data.text;
-      const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-        const prediction = JSON.parse(jsonMatch[0]);
-        const scoreParts = (prediction.score || '2-1').split('-');
-        const winnerMaps = Math.max(parseInt(scoreParts[0]) || 2, parseInt(scoreParts[1]) || 1);
-        const loserMaps = Math.min(parseInt(scoreParts[0]) || 2, parseInt(scoreParts[1]) || 1);
-        
-        return {
-          winner: prediction.winner || match.team1.name,
-          probability: Math.min(Math.max(prediction.probability || 55, 45), 75),
-          totalMaps: winnerMaps + loserMaps,
-          over2Maps: (winnerMaps + loserMaps) > 2,
-          confidence: Math.min(Math.max(prediction.confidence || 65, 50), 90),
-        };
-      }
-    } catch (error) {
-      console.error('[Analyzer] AI overall prediction failed, using fallback:', error);
+    if (mapPredictions.length === 0) {
+      return {
+        winner: match.team1.name,
+        probability: 50,
+        totalMaps: 3,
+        over2Maps: true,
+        confidence: 50,
+      };
     }
 
-    return this.generateOverallPrediction(match, team1Stats, team2Stats, mapPredictions);
+    const team1Wins = mapPredictions.filter(p => p.winner === match.team1.name).length;
+    const team2Wins = mapPredictions.filter(p => p.winner === match.team2.name).length;
+
+    const winner = team1Wins > team2Wins ? match.team1.name : match.team2.name;
+    const winnerMaps = Math.max(team1Wins, team2Wins);
+    const loserMaps = Math.min(team1Wins, team2Wins);
+
+    const totalMaps = mapPredictions.length;
+    const rawProbability = (Math.max(team1Wins, team2Wins) / totalMaps) * 100;
+
+    const team1FormScore = match.team1.recentForm.filter(f => f === 'W').length / Math.max(match.team1.recentForm.length, 1);
+    const team2FormScore = match.team2.recentForm.filter(f => f === 'W').length / Math.max(match.team2.recentForm.length, 1);
+    const formBonus = winner === match.team1.name ? team1FormScore * 10 : team2FormScore * 10;
+
+    const avgMapProbability = mapPredictions.reduce((sum, p) => sum + p.probability, 0) / mapPredictions.length;
+
+    let finalProbability = (rawProbability * 0.5) + (avgMapProbability * 0.4) + formBonus;
+    finalProbability = Math.max(48, Math.min(82, finalProbability));
+
+    const confidenceFactor = Math.abs(team1Wins - team2Wins) / totalMaps;
+    let confidence = 50 + (confidenceFactor * 40);
+    confidence = Math.max(55, Math.min(88, confidence));
+
+    return {
+      winner: winner,
+      probability: Math.round(finalProbability * 10) / 10,
+      totalMaps: winnerMaps + loserMaps,
+      over2Maps: (winnerMaps + loserMaps) > 2,
+      confidence: Math.round(confidence * 10) / 10,
+    };
   }
 }

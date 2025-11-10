@@ -369,6 +369,33 @@ export default function MatchDetailsScreen() {
             </View>
           </View>
 
+          {match.status === 'live' && match.mapsPicks && match.mapsPicks.length > 0 && (
+            <View style={styles.mapsPicksContainer}>
+              <Text style={styles.mapsPicksTitle}>Map Picks</Text>
+              {match.mapsPicks.map((pick, idx) => (
+                <View key={idx} style={styles.mapPickRow}>
+                  <View style={styles.mapPickNumber}>
+                    <Text style={styles.mapPickNumberText}>{pick.number}</Text>
+                  </View>
+                  <Text style={styles.mapPickName}>{pick.map}</Text>
+                  <Text style={styles.mapPickedBy}>Picked by {pick.pickedBy}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {match.currentMap && (
+            <View style={styles.currentMapContainer}>
+              <Text style={styles.currentMapTitle}>Current Map</Text>
+              <View style={styles.currentMapDetails}>
+                <Text style={styles.currentMapName}>{match.currentMap.name}</Text>
+                <Text style={styles.currentMapScore}>
+                  {match.currentMap.score.team1} - {match.currentMap.score.team2}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {!analysis && (
             <TouchableOpacity
               style={styles.analyzeButton}
@@ -1032,5 +1059,77 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
     color: '#0A0A0A',
+  },
+  mapsPicksContainer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#2A2A2A',
+  },
+  mapsPicksTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#FFB84D',
+    marginBottom: 12,
+  },
+  mapPickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 12,
+  },
+  mapPickNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2A2A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapPickNumberText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: '#FFB84D',
+  },
+  mapPickName: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  mapPickedBy: {
+    fontSize: 12,
+    color: '#888',
+  },
+  currentMapContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#2A1A1A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FF4444',
+  },
+  currentMapTitle: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: '#FF4444',
+    marginBottom: 8,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+  },
+  currentMapDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  currentMapName: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
+  },
+  currentMapScore: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    color: '#FFB84D',
   },
 });

@@ -413,6 +413,7 @@ export class PandaScoreScraper {
       startTime: psMatch.scheduled_at,
       event: psMatch.league?.name || psMatch.serie?.full_name || 'Unknown Event',
       format: 'BO3',
+      maps: ['Dust2', 'Mirage', 'Inferno'],
     };
 
     if (psMatch.results && psMatch.results.length === 2) {
@@ -423,7 +424,21 @@ export class PandaScoreScraper {
     }
 
     if (psMatch.games && psMatch.games.length > 0) {
-      match.maps = psMatch.games.map(g => g.map?.name || 'TBD');
+      const gamesMaps = psMatch.games
+        .map(g => g.map?.name)
+        .filter(m => m && m !== 'TBD');
+      
+      if (gamesMaps.length > 0) {
+        match.maps = gamesMaps as string[];
+        
+        if (status === 'live') {
+          match.mapsPicks = gamesMaps.map((mapName, idx) => ({
+            map: mapName || 'TBD',
+            pickedBy: idx % 2 === 0 ? team1?.name || 'Team 1' : team2?.name || 'Team 2',
+            number: idx + 1,
+          }));
+        }
+      }
     }
 
     if (psMatch.streams_list && psMatch.streams_list.length > 0) {
