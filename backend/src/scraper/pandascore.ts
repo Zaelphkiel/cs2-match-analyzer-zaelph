@@ -253,6 +253,55 @@ export class PandaScoreScraper {
     }
   }
 
+  async getNews(teamNames: string[]): Promise<any[]> {
+    try {
+      console.log(`[PandaScore] Fetching news for teams: ${teamNames.join(', ')}...`);
+      
+      const newsItems: any[] = [];
+
+      for (const teamName of teamNames) {
+        try {
+          const teams = await this.makeRequest<PandaScoreTeam[]>('/csgo/teams', {
+            search: { name: teamName },
+            per_page: 1,
+          });
+
+          if (teams.length > 0) {
+            const team = teams[0];
+            const matches = await this.makeRequest<PandaScoreMatch[]>(`/csgo/teams/${team.id}/matches`, {
+              per_page: 5,
+              sort: '-scheduled_at',
+            });
+
+            matches.forEach((match, idx) => {
+              const isUpcoming = match.status === 'not_started';
+              const isLive = match.status === 'running';
+              
+              if (isUpcoming || isLive) {
+                newsItems.push({
+                  id: `ps_news_${match.id}_${idx}`,
+                  timestamp: match.scheduled_at || new Date().toISOString(),
+                  title: `${teamName} ${isLive ? 'is playing' : 'will play'} ${match.name}`,
+                  content: `${teamName} ${isLive ? 'is currently playing against' : 'has an upcoming match against'} ${match.opponents?.map(o => o.opponent.name).join(' vs ')} in ${match.league?.name || match.serie?.full_name}`,
+                  importance: isLive ? 'high' as const : 'medium' as const,
+                  source: 'PandaScore',
+                });
+              }
+            });
+          }
+        } catch (error) {
+          console.error(`[PandaScore] Error fetching news for ${teamName}:`, error);
+        }
+      }
+
+      console.log(`[PandaScore] Found ${newsItems.length} news items`);
+      return newsItems.slice(0, 10);
+    } catch (error) {
+      console.error('[PandaScore] Error fetching news:', error);
+      return [];
+    }
+  }
+
   async getTeamMapStats(teamName: string): Promise<MapStats[]> {
     try {
       console.log(`[PandaScore] Fetching map stats for ${teamName}...`);

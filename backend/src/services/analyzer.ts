@@ -25,12 +25,15 @@ export class MatchAnalyzer {
       team1Players,
       team2Players,
       h2h,
-      news,
+      hltvNews,
       psTeam1Stats,
       psTeam2Stats,
       psH2H,
       psTeam1MapStats,
       psTeam2MapStats,
+      psTeam1Players,
+      psTeam2Players,
+      psNews,
     ] = await Promise.all([
       this.hltvScraper.getTeamStats(match.team1.name),
       this.hltvScraper.getTeamStats(match.team2.name),
@@ -45,6 +48,9 @@ export class MatchAnalyzer {
       this.pandascoreScraper.getH2HHistory(match.team1.name, match.team2.name),
       this.pandascoreScraper.getTeamMapStats(match.team1.name),
       this.pandascoreScraper.getTeamMapStats(match.team2.name),
+      this.pandascoreScraper.getPlayerStats(match.team1.name),
+      this.pandascoreScraper.getPlayerStats(match.team2.name),
+      this.pandascoreScraper.getNews([match.team1.name, match.team2.name]),
     ]);
 
     if (team1Stats || psTeam1Stats) {
@@ -62,6 +68,12 @@ export class MatchAnalyzer {
     const mergedH2H = [...h2h, ...psH2H].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     ).slice(0, 10);
+    
+    const mergedTeam1Players = [...team1Players, ...psTeam1Players].slice(0, 5);
+    const mergedTeam2Players = [...team2Players, ...psTeam2Players].slice(0, 5);
+    const mergedNews = [...hltvNews, ...psNews].sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ).slice(0, 15);
 
     const mapPredictions = this.generateMapPredictions(
       match.maps || ['TBD', 'TBD', 'TBD'],
@@ -79,22 +91,22 @@ export class MatchAnalyzer {
     const analysis: MatchAnalysis = {
       teamAnalysis: {
         team1: {
-          strengths: this.generateStrengths(mergedTeam1MapStats, team1Players),
-          weaknesses: this.generateWeaknesses(mergedTeam1MapStats, team1Players),
+          strengths: this.generateStrengths(mergedTeam1MapStats, mergedTeam1Players),
+          weaknesses: this.generateWeaknesses(mergedTeam1MapStats, mergedTeam1Players),
           mapPool: mergedTeam1MapStats,
-          keyPlayers: team1Players,
+          keyPlayers: mergedTeam1Players,
         },
         team2: {
-          strengths: this.generateStrengths(mergedTeam2MapStats, team2Players),
-          weaknesses: this.generateWeaknesses(mergedTeam2MapStats, team2Players),
+          strengths: this.generateStrengths(mergedTeam2MapStats, mergedTeam2Players),
+          weaknesses: this.generateWeaknesses(mergedTeam2MapStats, mergedTeam2Players),
           mapPool: mergedTeam2MapStats,
-          keyPlayers: team2Players,
+          keyPlayers: mergedTeam2Players,
         },
       },
       h2h: mergedH2H,
       mapPredictions: mapPredictions,
       overallPrediction: overallPrediction,
-      news: news,
+      news: mergedNews,
       lastUpdated: new Date().toISOString(),
     };
 

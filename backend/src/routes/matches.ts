@@ -25,34 +25,46 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    const [hltvMatches, pandascoreMatches] = await Promise.all([
-      hltvScraper.getMatches(),
-      pandascoreScraper.getMatches(),
-    ]);
-
-    const matchMap = new Map<string, Match>();
+    console.log('[API] Fetching matches from PandaScore (primary source)...');
+    const pandascoreMatches = await pandascoreScraper.getMatches();
     
-    hltvMatches.forEach(match => {
-      const key = `${match.team1.name}_${match.team2.name}`;
-      matchMap.set(key, match);
-    });
+    let allMatches = [...pandascoreMatches];
 
-    pandascoreMatches.forEach(match => {
-      const key = `${match.team1.name}_${match.team2.name}`;
-      if (!matchMap.has(key)) {
-        matchMap.set(key, match);
+    if (pandascoreMatches.length < 5) {
+      console.log('[API] PandaScore returned few matches, trying HLTV as backup...');
+      try {
+        const hltvMatches = await hltvScraper.getMatches();
+        const matchMap = new Map<string, Match>();
+        
+        pandascoreMatches.forEach(match => {
+          const key = `${match.team1.name}_${match.team2.name}`;
+          matchMap.set(key, match);
+        });
+
+        hltvMatches.forEach(match => {
+          const key = `${match.team1.name}_${match.team2.name}`;
+          if (!matchMap.has(key)) {
+            matchMap.set(key, match);
+          }
+        });
+
+        allMatches = Array.from(matchMap.values());
+      } catch (hltvError) {
+        console.error('[API] HLTV backup failed:', hltvError);
       }
-    });
-
-    const matches = Array.from(matchMap.values());
+    }
     
-    cacheService.set('all_matches', matches, 2);
+    cacheService.set('all_matches', allMatches, 2);
 
-    console.log(`[API] Returning ${matches.length} matches`);
+    console.log(`[API] Returning ${allMatches.length} matches (${pandascoreMatches.length} from PandaScore)`);
     res.json({
       success: true,
-      data: matches,
+      data: allMatches,
       cached: false,
+      sources: {
+        pandascore: pandascoreMatches.length,
+        total: allMatches.length,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -81,14 +93,34 @@ router.get('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    const matches = await hltvScraper.getMatches();
-    const match = matches.find(m => m.id === id);
+    let match: Match | undefined;
+
+    if (id.startsWith('ps_')) {
+      console.log('[API] Fetching from PandaScore...');
+      const pandascoreId = id.replace('ps_', '');
+      match = await pandascoreScraper.getMatchById(pandascoreId);
+    } else {
+      console.log('[API] Fetching from HLTV...');
+      const matches = await hltvScraper.getMatches();
+      match = matches.find(m => m.id === id);
+    }
 
     if (!match) {
-      return res.status(404).json({
-        success: false,
-        error: 'Match not found',
-      });
+      console.log('[API] Match not found, trying to find in all matches...');
+      const [hltvMatches, pandascoreMatches] = await Promise.all([
+        hltvScraper.getMatches(),
+        pandascoreScraper.getMatches(),
+      ]);
+      
+      const allMatches = [...hltvMatches, ...pandascoreMatches];
+      match = allMatches.find(m => m.id === id);
+      
+      if (!match) {
+        return res.status(404).json({
+          success: false,
+          error: 'Match not found',
+        });
+      }
     }
 
     cacheService.set(cacheKey, match, 2);
@@ -124,14 +156,34 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
       });
     }
 
-    const matches = await hltvScraper.getMatches();
-    const match = matches.find(m => m.id === id);
+    let match: Match | undefined;
+
+    if (id.startsWith('ps_')) {
+      console.log('[API] Fetching match from PandaScore...');
+      const pandascoreId = id.replace('ps_', '');
+      match = await pandascoreScraper.getMatchById(pandascoreId);
+    } else {
+      console.log('[API] Fetching match from HLTV...');
+      const matches = await hltvScraper.getMatches();
+      match = matches.find(m => m.id === id);
+    }
 
     if (!match) {
-      return res.status(404).json({
-        success: false,
-        error: 'Match not found',
-      });
+      console.log('[API] Match not found, trying to find in all matches...');
+      const [hltvMatches, pandascoreMatches] = await Promise.all([
+        hltvScraper.getMatches(),
+        pandascoreScraper.getMatches(),
+      ]);
+      
+      const allMatches = [...hltvMatches, ...pandascoreMatches];
+      match = allMatches.find(m => m.id === id);
+      
+      if (!match) {
+        return res.status(404).json({
+          success: false,
+          error: 'Match not found',
+        });
+      }
     }
 
     const analysis = await analyzer.analyzeMatch(match);
