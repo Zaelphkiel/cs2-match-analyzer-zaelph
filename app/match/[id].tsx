@@ -18,8 +18,8 @@ import {
   Sparkles,
   BarChart3,
 } from 'lucide-react-native';
-import { mockMatches } from '@/mocks/matches';
-import { mockAnalysis } from '@/mocks/analysis';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { api } from '@/constants/api';
 
 
 export default function MatchDetailsScreen() {
@@ -27,23 +27,39 @@ export default function MatchDetailsScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [selectedTab, setSelectedTab] = useState<'predictions' | 'analysis' | 'news'>('predictions');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const match = mockMatches.find((m) => m.id === id);
-  const analysis = match ? mockAnalysis[match.id] : undefined;
+  const { data: match, isLoading: isLoadingMatch } = useQuery({
+    queryKey: ['match', id],
+    queryFn: () => api.getMatchDetails(id as string),
+    enabled: !!id,
+  });
+
+  const analyzeMutation = useMutation({
+    mutationFn: () => api.analyzeMatch(id as string),
+  });
+
+  const analysis = analyzeMutation.data;
 
   useEffect(() => {
-    if (isAnalyzing) {
+    if (analyzeMutation.isPending) {
+      progressAnim.setValue(0);
       Animated.timing(progressAnim, {
         toValue: 1,
         duration: 3000,
         useNativeDriver: false,
-      }).start(() => {
-        setIsAnalyzing(false);
-      });
+      }).start();
     }
-  }, [isAnalyzing, progressAnim]);
+  }, [analyzeMutation.isPending, progressAnim]);
+
+  if (isLoadingMatch) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#FFB84D" />
+        <Text style={styles.loadingText}>Loading match details...</Text>
+      </View>
+    );
+  }
 
   if (!match) {
     router.replace('/+not-found');
@@ -51,8 +67,7 @@ export default function MatchDetailsScreen() {
   }
 
   const handleAnalyze = () => {
-    setIsAnalyzing(true);
-    progressAnim.setValue(0);
+    analyzeMutation.mutate();
   };
 
   const renderPredictions = () => {
@@ -398,10 +413,10 @@ export default function MatchDetailsScreen() {
             <TouchableOpacity
               style={styles.analyzeButton}
               onPress={handleAnalyze}
-              disabled={isAnalyzing}
+              disabled={analyzeMutation.isPending}
               activeOpacity={0.7}
             >
-              {isAnalyzing ? (
+              {analyzeMutation.isPending ? (
                 <>
                   <ActivityIndicator size="small" color="#0A0A0A" />
                   <Text style={styles.analyzeButtonText}>Analyzing...</Text>
@@ -415,7 +430,7 @@ export default function MatchDetailsScreen() {
             </TouchableOpacity>
           )}
 
-          {isAnalyzing && (
+          {analyzeMutation.isPending && (
             <View style={styles.progressContainer}>
               <View style={styles.progressBar}>
                 <Animated.View
@@ -433,6 +448,19 @@ export default function MatchDetailsScreen() {
               <Text style={styles.progressText}>
                 Analyzing teams, players, maps, and strategies...
               </Text>
+            </View>
+          )}
+
+          {analyzeMutation.isError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>Failed to analyze match</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={handleAnalyze}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -1010,5 +1038,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#AAA',
     lineHeight: 20,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#FFB84D',
+  },
+  errorContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#2A1A1A',
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#F44336',
+    fontWeight: '600' as const,
+  },
+  retryButton: {
+    backgroundColor: '#FFB84D',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#0A0A0A',
   },
 });

@@ -7,19 +7,27 @@ import {
   TouchableOpacity,
   Image,
   Animated,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Activity, Clock, TrendingUp, Filter } from 'lucide-react-native';
-import { mockMatches } from '@/mocks/matches';
+import { Activity, Clock, TrendingUp, Filter, AlertCircle } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/constants/api';
 import { Match } from '@/types/match';
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedTab, setSelectedTab] = useState<'live' | 'upcoming'>('live');
-  const [matches, setMatches] = useState(mockMatches);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const { data: matches = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['matches'],
+    queryFn: api.getMatches,
+    refetchInterval: 30000,
+  });
 
   useEffect(() => {
     Animated.loop(
@@ -36,37 +44,6 @@ export default function HomeScreen() {
         }),
       ])
     ).start();
-
-    const interval = setInterval(() => {
-      setMatches((prev) =>
-        prev.map((match) => {
-          if (match.status === 'live' && match.currentMap) {
-            const team1Change = Math.random() > 0.5 ? 1 : 0;
-            const team2Change = team1Change === 0 && Math.random() > 0.7 ? 1 : 0;
-
-            return {
-              ...match,
-              currentMap: {
-                ...match.currentMap,
-                score: {
-                  team1: Math.min(
-                    match.currentMap.score.team1 + team1Change,
-                    16
-                  ),
-                  team2: Math.min(
-                    match.currentMap.score.team2 + team2Change,
-                    16
-                  ),
-                },
-              },
-            };
-          }
-          return match;
-        })
-      );
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [pulseAnim]);
 
   const liveMatches = matches.filter((m) => m.status === 'live');
@@ -287,8 +264,35 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refetch}
+            tintColor="#FFB84D"
+          />
+        }
       >
-        {selectedTab === 'live' ? (
+        {isLoading && matches.length === 0 ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" color="#FFB84D" />
+            <Text style={styles.loadingText}>Loading matches...</Text>
+          </View>
+        ) : isError ? (
+          <View style={styles.emptyState}>
+            <AlertCircle size={48} color="#F44336" />
+            <Text style={styles.emptyText}>Failed to load matches</Text>
+            <Text style={styles.emptySubtext}>
+              Please check your internet connection
+            </Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => refetch()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : selectedTab === 'live' ? (
           liveMatches.length > 0 ? (
             liveMatches.map(renderMatch)
           ) : (
@@ -300,8 +304,16 @@ export default function HomeScreen() {
               </Text>
             </View>
           )
-        ) : (
+        ) : upcomingMatches.length > 0 ? (
           upcomingMatches.map(renderMatch)
+        ) : (
+          <View style={styles.emptyState}>
+            <Clock size={48} color="#333" />
+            <Text style={styles.emptyText}>No upcoming matches</Text>
+            <Text style={styles.emptySubtext}>
+              Check back later for scheduled games
+            </Text>
+          </View>
         )}
       </ScrollView>
     </View>
@@ -575,5 +587,28 @@ const styles = StyleSheet.create({
     color: '#444',
     textAlign: 'center' as const,
     paddingHorizontal: 40,
+  },
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#FFB84D',
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: '#FFB84D',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#0A0A0A',
   },
 });
