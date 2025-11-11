@@ -10,7 +10,10 @@ export const config = {
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.proxyapi.ru/deepseek/v1',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
-  aiProvider: process.env.AI_PROVIDER || 'gemini',
+  vertexAccessToken: process.env.VERTEX_ACCESS_TOKEN || '',
+  vertexProjectId: process.env.VERTEX_PROJECT_ID || '',
+  vertexRegion: process.env.VERTEX_REGION || 'us-central1',
+  aiProvider: process.env.AI_PROVIDER || 'vertex',
   nodeEnv: process.env.NODE_ENV || 'development',
   browserlessUrl: 'https://chrome.browserless.io',
   scraperApiUrl: 'https://api.scraperapi.com',
@@ -29,12 +32,16 @@ if (!config.pandascoreApiKey) {
   console.warn('WARNING: PANDASCORE_API_KEY not set');
 }
 
-if (!config.deepseekApiKey && !config.geminiApiKey) {
+if (!config.deepseekApiKey && !config.vertexAccessToken && !config.geminiApiKey) {
   console.warn('WARNING: No AI API key configured - AI analysis will use fallback data');
 }
 
-if (config.aiProvider === 'gemini' && !config.geminiApiKey) {
-  console.warn('WARNING: GEMINI_API_KEY not set but Gemini provider selected');
+if (config.aiProvider === 'vertex' && !config.vertexAccessToken) {
+  console.warn('WARNING: VERTEX_ACCESS_TOKEN not set but Vertex AI provider selected');
+}
+
+if (config.aiProvider === 'vertex' && !config.vertexProjectId) {
+  console.warn('WARNING: VERTEX_PROJECT_ID not set but Vertex AI provider selected');
 }
 
 console.log('Config loaded:', {
@@ -45,5 +52,6 @@ console.log('Config loaded:', {
   pandascoreConfigured: !!config.pandascoreApiKey,
   deepseekConfigured: !!config.deepseekApiKey,
   geminiConfigured: !!config.geminiApiKey,
+  vertexConfigured: !!config.vertexAccessToken && !!config.vertexProjectId,
   aiProvider: config.aiProvider,
 });

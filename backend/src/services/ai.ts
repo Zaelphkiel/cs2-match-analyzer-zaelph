@@ -1,54 +1,85 @@
 import OpenAI from 'openai';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config';
 import { Match, MapStats, Player } from '../types';
 
 export class AIService {
   private openaiClient: OpenAI | null = null;
-  private geminiClient: GoogleGenerativeAI | null = null;
-  private provider: 'openai' | 'gemini';
+  private provider: 'openai' | 'vertex';
 
   constructor() {
-    this.provider = config.aiProvider === 'gemini' ? 'gemini' : 'openai';
+    this.provider = config.aiProvider === 'vertex' ? 'vertex' : 'openai';
 
-    if (config.geminiApiKey && this.provider === 'gemini') {
-      this.geminiClient = new GoogleGenerativeAI(config.geminiApiKey);
-      console.log('[AI] Gemini client initialized');
-    } else if (config.deepseekApiKey) {
+    if (config.deepseekApiKey && this.provider === 'openai') {
       this.openaiClient = new OpenAI({
         apiKey: config.deepseekApiKey,
         baseURL: config.deepseekBaseUrl,
       });
       console.log('[AI] OpenAI client initialized via ProxyAPI');
+    } else if (this.provider === 'vertex') {
+      console.log('[AI] Vertex AI provider configured');
+      if (!config.vertexAccessToken) {
+        console.warn('[AI] Vertex AI token not configured');
+      }
+      if (!config.vertexProjectId) {
+        console.warn('[AI] Vertex AI project ID not configured');
+      }
     } else {
       console.warn('[AI] No AI provider configured');
     }
   }
 
-  private async generateWithGemini(prompt: string, systemPrompt: string): Promise<string | null> {
-    if (!this.geminiClient) {
+  private async generateWithVertex(prompt: string, systemPrompt: string): Promise<string | null> {
+    if (!config.vertexAccessToken || !config.vertexProjectId) {
+      console.error('[AI] Vertex AI not configured properly');
       return null;
     }
 
     try {
-      const model = this.geminiClient.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
-        generationConfig: {
-          temperature: 0.6,
-          maxOutputTokens: 500,
-          responseMimeType: 'application/json',
-        },
-      });
+      const region = config.vertexRegion || 'us-central1';
+      const model = 'gemini-2.0-flash-exp';
+      const url = `https://${region}-aiplatform.googleapis.com/v1/projects/${config.vertexProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+
+      console.log('[AI] Calling Vertex AI:', url);
 
       const fullPrompt = `${systemPrompt}\n\n${prompt}`;
-      const result = await model.generateContent(fullPrompt);
-      const response = result.response;
-      const text = response.text();
       
-      console.log('[AI] Gemini response received:', text.substring(0, 100));
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.vertexAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{ text: fullPrompt }]
+          }],
+          generationConfig: {
+            temperature: 0.6,
+            maxOutputTokens: 500,
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[AI] Vertex AI error:', response.status, errorText);
+        return null;
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!text) {
+        console.error('[AI] No text in Vertex AI response:', JSON.stringify(data));
+        return null;
+      }
+      
+      console.log('[AI] Vertex AI response received:', text.substring(0, 100));
       return text;
     } catch (error) {
-      console.error('[AI] Gemini error:', error);
+      console.error('[AI] Vertex AI error:', error);
       return null;
     }
   }
@@ -86,8 +117,8 @@ export class AIService {
   }
 
   private async generate(prompt: string, systemPrompt: string): Promise<string | null> {
-    if (this.provider === 'gemini') {
-      return this.generateWithGemini(prompt, systemPrompt);
+    if (this.provider === 'vertex') {
+      return this.generateWithVertex(prompt, systemPrompt);
     } else {
       return this.generateWithOpenAI(prompt, systemPrompt);
     }
@@ -135,7 +166,10 @@ export class AIService {
     expectedRounds: number;
     reasoning: string;
   } | null> {
-    if (!this.geminiClient && !this.openaiClient) {
+    const isConfigured = (this.provider === 'vertex' && config.vertexAccessToken && config.vertexProjectId) || 
+                         (this.provider === 'openai' && this.openaiClient);
+    
+    if (!isConfigured) {
       console.log('[AI] AI not configured, using fallback');
       return null;
     }
@@ -209,7 +243,10 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
     confidence: number;
     reasoning: string;
   } | null> {
-    if (!this.geminiClient && !this.openaiClient) {
+    const isConfigured = (this.provider === 'vertex' && config.vertexAccessToken && config.vertexProjectId) || 
+                         (this.provider === 'openai' && this.openaiClient);
+    
+    if (!isConfigured) {
       console.log('[AI] AI not configured, using fallback');
       return null;
     }
