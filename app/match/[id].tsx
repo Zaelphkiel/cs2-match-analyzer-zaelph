@@ -54,7 +54,9 @@ export default function MatchDetailsScreen() {
 
   useEffect(() => {
     if (!isLoadingMatch && !match) {
-      router.replace('/+not-found');
+      setTimeout(() => {
+        router.replace('/+not-found');
+      }, 0);
     }
   }, [isLoadingMatch, match, router]);
 
