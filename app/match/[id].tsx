@@ -56,7 +56,7 @@ export default function MatchDetailsScreen() {
     if (!isLoadingMatch && !match) {
       router.replace('/');
     }
-  }, [isLoadingMatch, match]);
+  }, [isLoadingMatch, match, router]);
 
   if (isLoadingMatch) {
     return (
