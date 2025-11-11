@@ -53,14 +53,10 @@ export default function MatchDetailsScreen() {
   }, [analyzeMutation.isPending, progressAnim]);
 
   useEffect(() => {
-    let isMounted = true;
-    if (!isLoadingMatch && !match && isMounted) {
-      router.replace('/+not-found');
+    if (!isLoadingMatch && !match) {
+      router.replace('/');
     }
-    return () => {
-      isMounted = false;
-    };
-  }, [isLoadingMatch, match, router]);
+  }, [isLoadingMatch, match]);
 
   if (isLoadingMatch) {
     return (
