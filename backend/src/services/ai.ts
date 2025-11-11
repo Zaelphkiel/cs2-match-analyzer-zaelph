@@ -1,19 +1,124 @@
 import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config';
 import { Match, MapStats, Player } from '../types';
 
 export class AIService {
-  private client: OpenAI | null = null;
+  private openaiClient: OpenAI | null = null;
+  private geminiClient: GoogleGenerativeAI | null = null;
+  private provider: 'openai' | 'gemini';
 
   constructor() {
-    if (config.deepseekApiKey) {
-      this.client = new OpenAI({
+    this.provider = config.aiProvider === 'gemini' ? 'gemini' : 'openai';
+
+    if (config.geminiApiKey && this.provider === 'gemini') {
+      this.geminiClient = new GoogleGenerativeAI(config.geminiApiKey);
+      console.log('[AI] Gemini client initialized');
+    } else if (config.deepseekApiKey) {
+      this.openaiClient = new OpenAI({
         apiKey: config.deepseekApiKey,
         baseURL: config.deepseekBaseUrl,
       });
       console.log('[AI] OpenAI client initialized via ProxyAPI');
     } else {
-      console.warn('[AI] API key not configured');
+      console.warn('[AI] No AI provider configured');
+    }
+  }
+
+  private async generateWithGemini(prompt: string, systemPrompt: string): Promise<string | null> {
+    if (!this.geminiClient) {
+      return null;
+    }
+
+    try {
+      const model = this.geminiClient.getGenerativeModel({ 
+        model: 'gemini-2.0-flash-exp',
+        generationConfig: {
+          temperature: 0.6,
+          maxOutputTokens: 500,
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const fullPrompt = `${systemPrompt}\n\n${prompt}`;
+      const result = await model.generateContent(fullPrompt);
+      const response = result.response;
+      const text = response.text();
+      
+      console.log('[AI] Gemini response received:', text.substring(0, 100));
+      return text;
+    } catch (error) {
+      console.error('[AI] Gemini error:', error);
+      return null;
+    }
+  }
+
+  private async generateWithOpenAI(prompt: string, systemPrompt: string): Promise<string | null> {
+    if (!this.openaiClient) {
+      return null;
+    }
+
+    try {
+      const response = await this.openaiClient.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.6,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      console.log('[AI] OpenAI response received:', content?.substring(0, 100));
+      return content || null;
+    } catch (error) {
+      console.error('[AI] OpenAI error:', error);
+      return null;
+    }
+  }
+
+  private async generate(prompt: string, systemPrompt: string): Promise<string | null> {
+    if (this.provider === 'gemini') {
+      return this.generateWithGemini(prompt, systemPrompt);
+    } else {
+      return this.generateWithOpenAI(prompt, systemPrompt);
+    }
+  }
+
+  private parseJsonResponse(content: string | null): any | null {
+    if (!content) {
+      console.log('[AI] Empty response');
+      return null;
+    }
+
+    try {
+      let cleanedContent = content.trim();
+      
+      if (cleanedContent.startsWith('```json')) {
+        cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+      } else if (cleanedContent.startsWith('```')) {
+        cleanedContent = cleanedContent.replace(/```\s*/g, '').replace(/```\s*$/g, '');
+      }
+      
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.log('[AI] No JSON found in response:', content);
+        return null;
+      }
+
+      const result = JSON.parse(jsonMatch[0]);
+      return result;
+    } catch (error) {
+      console.error('[AI] Error parsing JSON:', error);
+      return null;
     }
   }
 
@@ -30,7 +135,7 @@ export class AIService {
     expectedRounds: number;
     reasoning: string;
   } | null> {
-    if (!this.client) {
+    if (!this.geminiClient && !this.openaiClient) {
       console.log('[AI] AI not configured, using fallback');
       return null;
     }
@@ -46,6 +151,8 @@ export class AIService {
       const team2PlayersStr = team2Players.length > 0
         ? team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)}, K/D: ${p.kd.toFixed(2)})`).join(', ')
         : 'No player data available';
+
+      const systemPrompt = 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.';
 
       const prompt = `You are a CS2 esports analyst. Analyze the following match on ${mapName}:
 
@@ -71,47 +178,16 @@ Based on this data, provide your prediction. Respond with ONLY valid JSON in thi
 
 The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The probability should be between 50-85.`;
 
-      console.log(`[AI] Analyzing map ${mapName} for ${match.team1.name} vs ${match.team2.name}...`);
+      console.log(`[AI] Analyzing map ${mapName} for ${match.team1.name} vs ${match.team2.name} with ${this.provider}...`);
 
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.6,
-        max_tokens: 400,
-        response_format: { type: 'json_object' },
-      });
+      const content = await this.generate(prompt, systemPrompt);
+      const result = this.parseJsonResponse(content);
 
-      const content = response.choices[0]?.message?.content?.trim();
-      if (!content) {
-        console.log('[AI] Empty response from AI');
+      if (!result) {
         return null;
       }
 
-      let cleanedContent = content.trim();
-      if (cleanedContent.startsWith('```json')) {
-        cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
-      } else if (cleanedContent.startsWith('```')) {
-        cleanedContent = cleanedContent.replace(/```\s*/g, '').replace(/```\s*$/g, '');
-      }
-      
-      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.log('[AI] No JSON found in response:', content);
-        return null;
-      }
-
-      const result = JSON.parse(jsonMatch[0]);
       console.log(`[AI] Map analysis complete: ${result.winner} with ${result.probability}%`);
-      
       return result;
     } catch (error) {
       console.error('[AI] Error analyzing map:', error);
@@ -133,7 +209,7 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
     confidence: number;
     reasoning: string;
   } | null> {
-    if (!this.client) {
+    if (!this.geminiClient && !this.openaiClient) {
       console.log('[AI] AI not configured, using fallback');
       return null;
     }
@@ -146,6 +222,8 @@ The winner must be exactly "${match.team1.name}" or "${match.team2.name}". The p
       const team2PlayersStr = team2Players.length > 0
         ? team2Players.slice(0, 3).map(p => `${p.name} (Rating: ${p.rating.toFixed(2)})`).join(', ')
         : 'No player data';
+
+      const systemPrompt = 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.';
 
       const prompt = `You are a CS2 esports analyst. Analyze the overall match outcome:
 
@@ -179,47 +257,16 @@ Based on all data, provide your overall match prediction. Respond with ONLY vali
 
 The winner must be exactly "${match.team1.name}" or "${match.team2.name}". Probability should be 50-85.`;
 
-      console.log(`[AI] Analyzing overall match ${match.team1.name} vs ${match.team2.name}...`);
+      console.log(`[AI] Analyzing overall match ${match.team1.name} vs ${match.team2.name} with ${this.provider}...`);
 
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a professional CS2 esports analyst. You MUST respond with ONLY valid JSON, nothing else. No markdown, no code blocks, just pure JSON.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.6,
-        max_tokens: 500,
-        response_format: { type: 'json_object' },
-      });
+      const content = await this.generate(prompt, systemPrompt);
+      const result = this.parseJsonResponse(content);
 
-      const content = response.choices[0]?.message?.content?.trim();
-      if (!content) {
-        console.log('[AI] Empty response from AI');
+      if (!result) {
         return null;
       }
 
-      let cleanedContent = content.trim();
-      if (cleanedContent.startsWith('```json')) {
-        cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
-      } else if (cleanedContent.startsWith('```')) {
-        cleanedContent = cleanedContent.replace(/```\s*/g, '').replace(/```\s*$/g, '');
-      }
-
-      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.log('[AI] No JSON found in response:', content);
-        return null;
-      }
-
-      const result = JSON.parse(jsonMatch[0]);
       console.log(`[AI] Overall analysis complete: ${result.winner} with ${result.probability}%`);
-      
       return result;
     } catch (error) {
       console.error('[AI] Error analyzing overall match:', error);
